@@ -103,9 +103,43 @@ class MoinEditEntry:
             self.attachment,
         )
 
+    def decode_moin_name(self, thing: str) -> str:
+        """Decode MoinMoin hex encoded sequences e.g. (20) -> space, (2e20) -> '. ' """
+        def decode_hex(m):
+            hex_str = m.group(1)
+            try:
+                return bytes.fromhex(hex_str).decode("utf-8")
+            except Exception:
+                return m.group(0)
+        return re.sub(r'\(([0-9a-fA-F]+)\)', decode_hex, thing)
+
+    def sanitize_for_path(self, thing: str) -> str:
+        """Replace characters unsafe in filenames, preserving path separators"""
+        unsafe_chars = {
+            "\\": "_",
+            "*": "_",
+            "?": "_",
+            '"': "_",
+            "<": "_",
+            ">": "_",
+            "|": "_",
+            "\0": "_",
+        }
+        parts = thing.split("/")
+        sanitized = []
+        for part in parts:
+            for char, replacement in unsafe_chars.items():
+                part = part.replace(char, replacement)
+            sanitized.append(part)
+        return "/".join(sanitized)
+
     def unescape(self, thing: str) -> str:
-        """Uescape a wiki name - translate (2f) to /"""
-        return thing.replace("(2f)", "/")
+        """Decode MoinMoin name for use in URLs"""
+        return self.decode_moin_name(thing)
+
+    def unescape_path(self, thing: str) -> str:
+        """Decode MoinMoin name and sanitize for use in filesystem/git paths"""
+        return self.sanitize_for_path(self.decode_moin_name(thing))
 
     def page_name_unescaped(self) -> str:
         """Unescape the page name"""
@@ -116,8 +150,8 @@ class MoinEditEntry:
         return self.unescape(self.page_path)
 
     def markdown_transform(self, thing: str) -> str:
-        """Translates the (2f) to _ for use in Markdown page names"""
-        return thing.replace("(2f)", "_")
+        """Decode MoinMoin name and sanitize for use in Markdown page names/paths"""
+        return self.unescape_path(thing)
 
     def markdown_page_path(self):
         """Page path translated"""
@@ -243,13 +277,13 @@ class MoinEditEntries:
         pages = {}
         for entry in self.entries:
             page_path = entry.markdown_page_name()
-            page_split = entry.page_name.split("(2f)")
+            page_split = page_path.split("/")
             page_name = page_split.pop()
             pages[page_path] = (
                 len(page_split) * "  "
             ) + f"- [{page_name}]({page_path})\n"
             while len(page_split) > 0:
-                page_path = "_".join(page_split)
+                page_path = "/".join(page_split)
                 page_name = page_split.pop()
                 if page_path not in pages:
                     pages[page_path] = (len(page_split) * "  ") + f"- {page_name}\n"
