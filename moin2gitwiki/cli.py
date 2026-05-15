@@ -148,12 +148,34 @@ def save_users(ctx, filename):
     envvar="MOIN2GIT_WIKI_TYPE",
     help="Target wiki type. Sets defaults for all behaviour flags.",
 )
+@click.option(
+    "--strip-dots/--no-strip-dots",
+    default=None,
+    help="Remove dots from page names. Defaults to True for otterwiki, False otherwise.",
+)
+@click.option(
+    "--spaces-to-hyphens/--no-spaces-to-hyphens",
+    default=None,
+    help="Replace spaces in page names with hyphens. Defaults to True for gollum/gitea, False for otterwiki.",
+)
+@click.option(
+    "--subpages-as-dirs/--no-subpages-as-dirs",
+    default=None,
+    help="Convert MoinMoin subpages (2f) to real subdirectories. Defaults to True for otterwiki, False for gollum/gitea.",
+)
+@click.option(
+    "--attachment-dir",
+    default=None,
+    envvar="MOIN2GIT_ATTACHMENT_DIR",
+    help="Attachment folder name. Defaults to 'a' for otterwiki, '_attachments' for gollum/gitea. "
+         "Layout: subpages-as-dirs=True gives PageName/dir/file, False gives dir/PageName/file.",
+)
 @click.argument(
     "destination",
     type=click.Path(exists=False, file_okay=False, dir_okay=True),
 )
 @click.pass_obj
-def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, destination):
+def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_dots, spaces_to_hyphens, subpages_as_dirs, attachment_dir, destination):
     """
     Git fast-export all the revisions in the wiki into markdown git wiki form
 
@@ -184,10 +206,11 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, destinat
     destination = Path(destination)
     ctx.wiki_type = wiki_type
     is_otterwiki = wiki_type.lower() == "otterwiki"
-    ctx.strip_dots = is_otterwiki
-    ctx.spaces_to_hyphens = not is_otterwiki
-    ctx.subpages_as_dirs = is_otterwiki
-    ctx.attachment_dir = "a" if is_otterwiki else "_attachments"
+    # each flag defaults based on wiki type if not explicitly set
+    ctx.strip_dots = strip_dots if strip_dots is not None else is_otterwiki
+    ctx.spaces_to_hyphens = spaces_to_hyphens if spaces_to_hyphens is not None else (not is_otterwiki)
+    ctx.subpages_as_dirs = subpages_as_dirs if subpages_as_dirs is not None else is_otterwiki
+    ctx.attachment_dir = attachment_dir if attachment_dir is not None else ("a" if is_otterwiki else "_attachments")
     if destination.exists():
         raise SystemExit(f"Destination path {destination} already exists.")
     #

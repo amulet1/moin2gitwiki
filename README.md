@@ -71,14 +71,20 @@ output for different target wiki platforms:
 - `gitea` — alias for `gollum`, provided for self-documentation
 - `otterwiki` — for [Otter Wiki](https://otterwiki.com)
 
-The wiki type controls the following behaviour:
+The wiki type sets defaults for the following flags, each of which can be
+overridden individually:
 
-| | `gollum` / `gitea` | `otterwiki` |
-|---|---|---|
-| Spaces in page names | → hyphens | preserved |
-| MoinMoin subpages `(2f)` | → `_` (flat structure) | → `/` (subdirectories) |
-| Attachment layout | `_attachments/PageName/file` | `PageName/a/file` |
-| Dots in page names | preserved | stripped |
+| Flag | `gollum` / `gitea` | `otterwiki` | Effect |
+|---|---|---|---|
+| `--strip-dots` / `--no-strip-dots` | False | **True** | Remove dots from page names |
+| `--spaces-to-hyphens` / `--no-spaces-to-hyphens` | **True** | False | Replace spaces with hyphens |
+| `--subpages-as-dirs` / `--no-subpages-as-dirs` | False | **True** | MoinMoin `(2f)` subpages as real subdirectories |
+| `--attachment-dir` | `_attachments` | `a` | Attachment folder name |
+
+Attachment layout is determined by `--subpages-as-dirs`:
+
+- `True` (otterwiki default): `PageName/<attachment-dir>/file` — alongside the page
+- `False` (gollum default): `<attachment-dir>/PageName/file` — central folder
 
 ## Issues
 

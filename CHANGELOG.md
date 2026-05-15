@@ -15,6 +15,20 @@ Unreleased Changes
 - fix: `KeyError` crash when processing `<img>` tags without `src` attribute
 - fix: `ValueError` crash when `furl` misinterprets a relative wiki link
   as an invalid hostname during URL joining
+- fix: content section lookup now supports both MoinMoin Explorer theme
+  (`id="page_content"`) and standard Modern theme (`id="content"`)
+- fix: universal MoinMoin hex encoding decoder in `wikiindex.py` replacing
+  the `(2f)`-only `unescape()` — now decodes any hex sequence e.g.
+  `(20)` → space, `(2d)` → `-`, `(2e20)` → `. `
+- fix: attachment paths now decoded from MoinMoin encoding so they match
+  decoded page names, preventing broken attachment links
+- feat: add `--wiki-type [gollum|gitea|otterwiki]` option to `fast-export`
+  (default: `gollum`) — sets appropriate defaults for page naming, subpage
+  structure and attachment layout per target platform
+- feat: add fine-grained conversion flags to `fast-export`, all defaulting
+  to `None` and derived from `--wiki-type` when not explicitly set:
+  `--strip-dots`, `--spaces-to-hyphens`, `--subpages-as-dirs`,
+  `--attachment-dir`
 
 <!-- insertion marker -->
 [0.8.0] - 2023-04-24
