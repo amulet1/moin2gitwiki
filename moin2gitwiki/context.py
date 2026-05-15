@@ -53,6 +53,7 @@ class Moin2GitContext:
     subpages_as_dirs: bool = attr.ib(default=False)
     attachment_dir: str = attr.ib(default="_attachments")
     wiki_type: str = attr.ib(default="gollum")
+    log_file: str = attr.ib(default=LOG_FILE)
 
     @property
     def moin_data(self):
@@ -119,7 +120,7 @@ class Moin2GitContext:
             file_handler: logger file handler
         """
         file_handler = logging.handlers.TimedRotatingFileHandler(
-            LOG_FILE,
+            self.log_file,
             when="midnight",
         )
         file_handler.setLevel(logging.DEBUG)

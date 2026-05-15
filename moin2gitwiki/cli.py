@@ -35,9 +35,15 @@ from .wikiindex import MoinEditEntries
     envvar="MOIN2GIT_USERS",
 )
 @click.option("--proxy", multiple=True, default=[], envvar="MOIN2GIT_PROXY")
+@click.option(
+    "--log-file",
+    default=None,
+    envvar="MOIN2GIT_LOG_FILE",
+    help="Log file path. Defaults to moin2gitwiki.log in the current directory.",
+)
 @click.version_option(__version__)
 @click.pass_context
-def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy):
+def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy, log_file):
     """
     MoinMoin To Git Wiki Tools Command Line Utility
 
@@ -86,6 +92,7 @@ def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy):
         moin_data=moin_data,
         user_map=user_map,
         proxies=proxy,
+        **({"log_file": log_file} if log_file is not None else {}),
     )
 
 
