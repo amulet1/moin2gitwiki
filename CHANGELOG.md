@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 Unreleased Changes
 ------------------
 
+### Fork changes
+
+- fix: regex bug in `is_a_linemark_para()` — `r"line\\d+"` was matching a
+  literal backslash followed by `d` rather than a digit, corrected to `r"line\d+"`
+- fix: `KeyError` crash when processing `<a>` tags without `href` attribute
+- fix: `KeyError` crash when processing `<img>` tags without `src` attribute
+- fix: `ValueError` crash when `furl` misinterprets a relative wiki link
+  as an invalid hostname during URL joining
+
 <!-- insertion marker -->
 [0.8.0] - 2023-04-24
 --------------------

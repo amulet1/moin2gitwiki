@@ -16,7 +16,7 @@ def is_a_linemark_para(tag):
     return (
         tag.name == "p"
         and tag.has_attr("class")
-        and re.match(r"line\\d+", tag["class"][0])
+        and re.match(r"line\d+", tag["class"][0])  # fix: was r"line\\d+" (matched literal backslash)
     )
 
 
@@ -149,7 +149,8 @@ class Moin2Markdown:
 
         """
         soup = BeautifulSoup(html, "html.parser")
-        content = soup.find(id="content")
+        # fix: Explorer theme uses id="page_content", Modern theme uses id="content"
+        content = soup.find(id="page_content") or soup.find(id="content")
         if content is None:
             return ""
         #
@@ -163,10 +164,16 @@ class Moin2Markdown:
         #
         # now find all the links, and if within the wiki, rewrite
         for tag in content.find_all("a"):
+            if not tag.get("href"):  # fix: skip <a> tags without href to avoid KeyError
+                continue
             target = tag["href"]
             if target:
                 self.ctx.logger.debug(f"Trying to map link {target}")
-                url = self.url_prefix.copy().join(target)
+                try:  # fix: furl raises ValueError on URLs it misinterprets as hostnames
+                    url = self.url_prefix.copy().join(target)
+                except ValueError:
+                    self.ctx.logger.debug(f"Skipping invalid link {target}")
+                    continue
                 if url.url.startswith(self.url_prefix.url):
                     new_url = (
                         url.copy().remove(query=True).url[len(self.url_prefix.url) :]
@@ -200,6 +207,8 @@ class Moin2Markdown:
         # now find all the images and see if they map to emojis
         # MoinMoin puts the emoji code in the title, so will purely match on that
         for tag in content.find_all("img"):
+            if not tag.get("src"):  # fix: skip <img> tags without src to avoid KeyError
+                continue
             target = tag["src"]
             self.ctx.logger.debug(f"Image target {target}")
             if tag.has_attr("title") and tag["title"] in self.smiley_map:
