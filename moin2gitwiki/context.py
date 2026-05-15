@@ -48,6 +48,11 @@ class Moin2GitContext:
     debug: bool = attr.ib(default=False)
     verbose: bool = attr.ib(default=False)
     proxies: Dict[str, str] = attr.ib(default={})
+    strip_dots: bool = attr.ib(default=False)
+    spaces_to_hyphens: bool = attr.ib(default=True)
+    subpages_as_dirs: bool = attr.ib(default=False)
+    attachment_dir: str = attr.ib(default="_attachments")
+    wiki_type: str = attr.ib(default="gollum")
 
     @property
     def moin_data(self):

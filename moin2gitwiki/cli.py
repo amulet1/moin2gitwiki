@@ -141,12 +141,19 @@ def save_users(ctx, filename):
     envvar="MOIN2GIT_PREFIX",
 )
 @click.option("--home-page/--no-home-page", default=True)
+@click.option(
+    "--wiki-type",
+    type=click.Choice(["gollum", "gitea", "otterwiki"], case_sensitive=False),
+    default="gollum",
+    envvar="MOIN2GIT_WIKI_TYPE",
+    help="Target wiki type. Sets defaults for all behaviour flags.",
+)
 @click.argument(
     "destination",
     type=click.Path(exists=False, file_okay=False, dir_okay=True),
 )
 @click.pass_obj
-def fast_export(ctx, cache_directory, url_prefix, home_page, destination):
+def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, destination):
     """
     Git fast-export all the revisions in the wiki into markdown git wiki form
 
@@ -175,6 +182,12 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, destination):
     """
     # cwd = Path.cwd()
     destination = Path(destination)
+    ctx.wiki_type = wiki_type
+    is_otterwiki = wiki_type.lower() == "otterwiki"
+    ctx.strip_dots = is_otterwiki
+    ctx.spaces_to_hyphens = not is_otterwiki
+    ctx.subpages_as_dirs = is_otterwiki
+    ctx.attachment_dir = "a" if is_otterwiki else "_attachments"
     if destination.exists():
         raise SystemExit(f"Destination path {destination} already exists.")
     #

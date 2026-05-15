@@ -58,8 +58,27 @@ passed through as HTML - which displays correctly but is less easy to parse
 and edit.
 
 Attachments that are available in the wiki are also handled - they are put
-into a `_attachments` directory under a subdirectory named for the original
-page directory name. Links to attachments should be handled correctly.
+into a directory under a subdirectory named for the original page. The exact
+location depends on the `--wiki-type` setting — see Wiki Types below.
+Links to attachments should be handled correctly.
+
+## Wiki Types
+
+The `fast-export` command accepts a `--wiki-type` option to configure the
+output for different target wiki platforms:
+
+- `gollum` (default) — for GitHub, GitLab, and Gollum-based wikis
+- `gitea` — alias for `gollum`, provided for self-documentation
+- `otterwiki` — for [Otter Wiki](https://otterwiki.com)
+
+The wiki type controls the following behaviour:
+
+| | `gollum` / `gitea` | `otterwiki` |
+|---|---|---|
+| Spaces in page names | → hyphens | preserved |
+| MoinMoin subpages `(2f)` | → `_` (flat structure) | → `/` (subdirectories) |
+| Attachment layout | `_attachments/PageName/file` | `PageName/a/file` |
+| Dots in page names | preserved | stripped |
 
 ## Issues
 
@@ -96,5 +115,9 @@ the command can then be run as
 ## Todo
 
 - Make tests effective
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list of changes in this fork.
 
 ---

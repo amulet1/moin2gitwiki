@@ -96,15 +96,20 @@ class MoinEditEntry:
     def attachment_destination(self):
         """The new pathname of the attachment file.
 
-        The page path is decoded from MoinMoin encoding so attachment paths
-        match the decoded page names produced by markdown_transform()."""
+        Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
+        - subpages_as_dirs=True  (otterwiki): PageName/<attachment_dir>/filename
+        - subpages_as_dirs=False (gollum):    <attachment_dir>/PageName/filename
+
+        attachment_dir defaults to 'a' for otterwiki, '_attachments' for gollum/gitea."""
         if self.attachment is None:
             raise ValueError("No attachment path set")
-        return os.path.join(
-            "_attachments",
-            self.unescape_path(self.page_path),
-            self.attachment,
-        )
+        subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
+        attachment_dir = getattr(self.ctx, "attachment_dir", "_attachments")
+        decoded_page = self.markdown_transform(self.page_path).replace(".md", "")
+        if subpages_as_dirs:
+            return os.path.join(decoded_page, attachment_dir, self.attachment)
+        else:
+            return os.path.join(attachment_dir, decoded_page, self.attachment)
 
     def decode_moin_name(self, thing: str) -> str:
         """Decode MoinMoin hex encoded sequences e.g. (20) -> space, (2e20) -> '. ' """
@@ -117,7 +122,12 @@ class MoinEditEntry:
         return re.sub(r'\(([0-9a-fA-F]+)\)', decode_hex, thing)
 
     def sanitize_for_path(self, thing: str) -> str:
-        """Replace characters unsafe in filenames, preserving path separators"""
+        """Replace characters unsafe in filenames, preserving path separators.
+
+        Controlled by context flags:
+        - ctx.spaces_to_hyphens: replace spaces with hyphens (default: True for gollum/gitea)
+        - ctx.strip_dots: remove dots (default: True for otterwiki)
+        """
         unsafe_chars = {
             "\\": "_",
             "*": "_",
@@ -128,11 +138,17 @@ class MoinEditEntry:
             "|": "_",
             "\0": "_",
         }
+        spaces_to_hyphens = getattr(self.ctx, "spaces_to_hyphens", True)
+        strip_dots = getattr(self.ctx, "strip_dots", False)
         parts = thing.split("/")
         sanitized = []
         for part in parts:
             for char, replacement in unsafe_chars.items():
                 part = part.replace(char, replacement)
+            if spaces_to_hyphens:
+                part = part.replace(" ", "-")
+            if strip_dots:
+                part = part.replace(".", "")
             sanitized.append(part)
         return "/".join(sanitized)
 
@@ -153,8 +169,20 @@ class MoinEditEntry:
         return self.unescape(self.page_path)
 
     def markdown_transform(self, thing: str) -> str:
-        """Decode MoinMoin name and sanitize for use in Markdown page names/paths"""
-        return self.unescape_path(thing)
+        """Decode MoinMoin name and sanitize for use in Markdown page names/paths.
+
+        Controlled by ctx.subpages_as_dirs:
+        - True (otterwiki): (2f) becomes real subdirectory separator /
+        - False (gollum/gitea): (2f) is flattened to _
+        """
+        subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
+        if subpages_as_dirs:
+            return self.unescape_path(thing)
+        else:
+            decoded = self.decode_moin_name(thing)
+            parts = decoded.split("/")
+            sanitized = [self.sanitize_for_path(part) for part in parts]
+            return "_".join(sanitized)
 
     def markdown_page_path(self):
         """Page path translated"""
