@@ -4,6 +4,10 @@
 [![documentation](https://img.shields.io/badge/docs-mkdocs%20material-blue.svg?style=flat)](https://nigelm.github.io/moin2gitwiki/)
 [![pypi version](https://img.shields.io/pypi/v/moin2gitwiki.svg)](https://pypi.python.org/pypi/moin2gitwiki)
 
+> **Fork notice:** This is a fork of the original moin2gitwiki by Nigel
+> Metheringham, aiming to extend support for additional target wiki platforms
+> and fix several issues discovered during real-world usage.
+
 App to convert a MoinMoin wiki file tree into a git based wiki as used on
 github, gitlab or gitea.
 
