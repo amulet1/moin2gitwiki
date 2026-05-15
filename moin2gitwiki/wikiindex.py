@@ -94,12 +94,15 @@ class MoinEditEntry:
         return data
 
     def attachment_destination(self):
-        """The new pathname of the attachment file"""
+        """The new pathname of the attachment file.
+
+        The page path is decoded from MoinMoin encoding so attachment paths
+        match the decoded page names produced by markdown_transform()."""
         if self.attachment is None:
             raise ValueError("No attachment path set")
         return os.path.join(
             "_attachments",
-            self.page_path,
+            self.unescape_path(self.page_path),
             self.attachment,
         )
 
