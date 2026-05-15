@@ -113,24 +113,23 @@ first appeared but with the latest content).
 
 ## Installation
 
-I have now made this available as a pypi package, in which case it can be
-installed by running
+This is a fork of the original moin2gitwiki. Install from this repository
+rather than from PyPI to get the fixes and features described above.
 
-    pip install moin2gitwiki
+You will also need `pandoc` and `git` available in your PATH.
 
-However to use it you will also need to install the `pandoc` and `git`
-packages as these commands are run during the conversion.
+    git clone https://github.com/amulet1/moin2gitwiki.git
+    cd moin2gitwiki
+    python3 -m venv venv
+    venv/bin/pip install -e .
 
-However it can be installed from the repo - it uses
-[`poetry`](https://python-poetry.org/) to manage dependancies etc, so the best
-way to make use of this is to install [`poetry`](https://python-poetry.org/)
-for your python version and then:-
+To update to the latest version:
 
-    poetry install
+    cd moin2gitwiki
+    git pull
 
-the command can then be run as
-
-    poetry run moin2gitwiki ...
+No reinstall is needed after `git pull` since the package is installed
+in editable mode.
 
 ## Todo
 
