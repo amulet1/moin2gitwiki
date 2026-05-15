@@ -158,9 +158,10 @@ class Moin2Markdown:
         for tag in content.find_all(class_="anchor"):
             tag.decompose()
         #
-        # Remove dead <p class="line???"> with no closer
+        # Remove line??? CSS class from <p> tags but keep them as paragraphs
+        # so pandoc preserves paragraph breaks — unwrapping merges content inline
         for tag in content.find_all(is_a_linemark_para):
-            tag.unwrap()
+            del tag["class"]
         #
         # now find all the links, and if within the wiki, rewrite
         for tag in content.find_all("a"):
