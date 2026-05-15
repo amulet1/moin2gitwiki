@@ -86,6 +86,20 @@ Attachment layout is determined by `--subpages-as-dirs`:
 - `True` (otterwiki default): `PageName/<attachment-dir>/file` — alongside the page
 - `False` (gollum default): `<attachment-dir>/PageName/file` — central folder
 
+## MoinMoin Preparation
+
+Before running the conversion, the MoinMoin instance must be accessible
+via HTTP. One temporary change to `wikiconfig.py` is required to disable
+surge protection — moin2gitwiki fetches pages rapidly and will otherwise
+be blocked, producing empty pages silently:
+
+```python
+surge_action_limits = None
+```
+
+Restart MoinMoin after making this change. Remember to revert it once
+the conversion is complete.
+
 ## Issues
 
 The overall process is not particularly fast. But this should be something
