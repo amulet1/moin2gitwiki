@@ -171,6 +171,13 @@ def save_users(ctx, filename):
     help="Convert MoinMoin subpages (2f) to real subdirectories. Defaults to True for otterwiki, False for gollum/gitea.",
 )
 @click.option(
+    "--category-folders/--no-category-folders",
+    default=False,
+    help="Use MoinMoin category tags to organize pages into subfolders. "
+         "Category pages become folder index pages; pages tagged with a "
+         "category are placed under that folder. Default: off.",
+)
+@click.option(
     "--attachment-dir",
     default=None,
     envvar="MOIN2GIT_ATTACHMENT_DIR",
@@ -182,7 +189,7 @@ def save_users(ctx, filename):
     type=click.Path(exists=False, file_okay=False, dir_okay=True),
 )
 @click.pass_obj
-def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_dots, spaces_to_hyphens, subpages_as_dirs, attachment_dir, destination):
+def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_dots, spaces_to_hyphens, subpages_as_dirs, attachment_dir, category_folders, destination):
     """
     Git fast-export all the revisions in the wiki into markdown git wiki form
 
@@ -218,12 +225,17 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     ctx.spaces_to_hyphens = spaces_to_hyphens if spaces_to_hyphens is not None else (not is_otterwiki)
     ctx.subpages_as_dirs = subpages_as_dirs if subpages_as_dirs is not None else is_otterwiki
     ctx.attachment_dir = attachment_dir if attachment_dir is not None else ("a" if is_otterwiki else "_attachments")
+    ctx.category_folders = category_folders
     if destination.exists():
         raise SystemExit(f"Destination path {destination} already exists.")
     #
     # build your initial revision set from the wiki data
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
+    #
+    # build category map if needed (pass 1)
+    if ctx.category_folders:
+        revisions.build_category_map()
     #
     # build the translator
     translator = Moin2Markdown.create_translator(
@@ -282,6 +294,10 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     # build your initial revision set from the wiki data
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
+    #
+    # build category map if needed (pass 1)
+    if ctx.category_folders:
+        revisions.build_category_map()
     #
     # build the translator
     translator = Moin2Markdown.create_translator(

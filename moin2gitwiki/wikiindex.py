@@ -10,6 +10,16 @@ import attr
 
 from .users import Moin2GitUser
 
+# Regex patterns for MoinMoin category references
+# Matches [[CategoryXxx]], [[CategoryXxx|label]], [[CategoryXxx/Sub|label]]
+_CATEGORY_BRACKETED = re.compile(r'\[\[Category([^\]|]+?)(?:\|[^\]]*)?\]\]')
+# Matches bare CategoryXxx at start of line or after whitespace (not mid-word)
+_CATEGORY_BARE = re.compile(r'(?:^|(?<=\s))Category([\w/]+)')
+# Matches a line consisting entirely of category references, whitespace and separators
+_CATEGORY_ONLY_LINE = re.compile(
+    r'^[\s\-]*(?:(?:\[\[Category[^\]]+\]\]|Category[\w/]+)[\s\-]*)+$'
+)
+
 
 class MoinEditType(Enum):
     PAGE = auto()
@@ -168,29 +178,146 @@ class MoinEditEntry:
         """Unescape the page path"""
         return self.unescape(self.page_path)
 
-    def markdown_transform(self, thing: str) -> str:
-        """Decode MoinMoin name and sanitize for use in Markdown page names/paths.
+    def extract_category_refs(self):
+        """Extract all category references from page content.
 
-        Controlled by ctx.subpages_as_dirs:
-        - True (otterwiki): (2f) becomes real subdirectory separator /
-        - False (gollum/gitea): (2f) is flattened to _
+        Finds both bracketed ([[CategoryXxx]], [[CategoryXxx|label]]) and
+        bare (CategoryXxx on its own line) category references.
+        Skips MoinMoin comment lines (starting with ##).
+        Returns list of category names with Category prefix stripped.
+        """
+        lines = self.wiki_content()
+        if not lines:
+            return []
+        refs = []
+        seen = set()
+        for line in lines:
+            # skip MoinMoin comment lines
+            if line.startswith("##"):
+                continue
+            for m in _CATEGORY_BRACKETED.finditer(line):
+                name = m.group(1).strip()
+                if name not in seen:
+                    seen.add(name)
+                    refs.append(name)
+            # bare CategoryXxx only accepted on lines consisting entirely
+            # of category references — not in the middle of prose
+            if _CATEGORY_ONLY_LINE.match(line):
+                for m in _CATEGORY_BARE.finditer(line):
+                    name = m.group(1).strip()
+                    if name not in seen:
+                        seen.add(name)
+                        refs.append(name)
+        return refs
+
+    def primary_category_ref(self):
+        """Return the first category reference from page content, or None.
+
+        The returned name has the Category prefix already stripped.
+        """
+        refs = self.extract_category_refs()
+        return refs[0] if refs else None
+
+    def markdown_transform(self, thing: str) -> str:
+        """Decode MoinMoin name and convert to a Markdown page path.
+
+        Processing steps in order:
+        1. Decode hex sequences e.g. (20)->space, (2f)->/
+        2. Split on / to get path parts
+        3. If first part starts with Category and category_folders is enabled:
+           - Strip Category prefix from first part
+           - Split on first / to get category name and optional suffix
+           - Resolve category name via ctx.resolved_categories
+           - Reassemble: resolved_path / suffix / remaining parts
+        4. If not a category page and category_folders enabled:
+           - Look up primary category ref from page content
+           - Prepend resolved category path to parts
+        5. Sanitize each part (spaces, dots etc. based on wiki type)
+        6. Join parts with / (subpages_as_dirs) or _ (gollum/gitea)
         """
         subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
+        category_folders = getattr(self.ctx, "category_folders", False)
+
+        # step 1+2: decode and split
+        decoded = self.decode_moin_name(thing)
+        parts = decoded.split("/")
+
+        # step 3+4: category folder resolution
+        if category_folders:
+            if parts[0].startswith("Category"):
+                # category page: strip prefix, split into name + suffix
+                stripped = parts[0][len("Category"):]
+                cat_parts = stripped.split("/", 1)
+                cat_name = cat_parts[0]
+                cat_suffix = cat_parts[1] if len(cat_parts) > 1 else None
+                # resolve category name to full path
+                resolved = self.ctx.resolve_category(cat_name)
+                resolved_parts = resolved.split("/")
+                if cat_suffix:
+                    resolved_parts.append(cat_suffix)
+                # append any remaining subpage parts
+                parts = resolved_parts + parts[1:]
+            else:
+                # regular page: prepend resolved category if tagged
+                cat_ref = self.primary_category_ref()
+                if cat_ref:
+                    # strip Category prefix if present
+                    if cat_ref.startswith("Category"):
+                        cat_ref = cat_ref[len("Category"):]
+                    # split ref into category name + optional suffix
+                    cat_parts = cat_ref.split("/", 1)
+                    cat_name = cat_parts[0]
+                    cat_suffix = cat_parts[1] if len(cat_parts) > 1 else None
+                    resolved = self.ctx.resolve_category(cat_name)
+                    resolved_parts = resolved.split("/")
+                    if cat_suffix:
+                        resolved_parts.append(cat_suffix)
+                    parts = resolved_parts + parts
+
+        # step 5: sanitize each part
+        parts = [self.sanitize_for_path(p) for p in parts if p]
+
+        # step 6: join
         if subpages_as_dirs:
-            return self.unescape_path(thing)
+            return "/".join(parts)
         else:
-            decoded = self.decode_moin_name(thing)
-            parts = decoded.split("/")
-            sanitized = [self.sanitize_for_path(part) for part in parts]
-            return "_".join(sanitized)
+            return "_".join(parts)
 
     def markdown_page_path(self):
         """Page path translated"""
-        return self.markdown_transform(self.page_name) + ".md"
+        return self._registered_page_name() + ".md"
 
     def markdown_page_name(self):
         """Page name translated"""
-        return self.markdown_transform(self.page_name)
+        return self._registered_page_name()
+
+    def _registered_page_name(self):
+        """Return markdown_transform result, with collision detection via path_registry."""
+        if not getattr(self.ctx, "category_folders", False):
+            return self.markdown_transform(self.page_name)
+
+        registry = self.ctx.path_registry
+        my_key = self.page_path
+        if my_key in registry:
+            return registry[my_key]
+
+        candidate = self.markdown_transform(self.page_name)
+
+        # collision detection — find a unique path
+        final = candidate
+        suffix = 1
+        existing = set(registry.values())
+        while final in existing:
+            suffix += 1
+            final = candidate + "_" + str(suffix)
+        if final != candidate:
+            self.ctx.logger.warning(
+                f"Path collision for {self.page_name}: {candidate} already taken, "
+                f"using {final}"
+            )
+
+        registry[my_key] = final
+        return final
 
 
 @attr.s(kw_only=True, frozen=True, slots=True)
@@ -291,6 +418,133 @@ class MoinEditEntries:
 
     def count(self) -> int:
         return len(self.entries)
+
+    def build_category_map(self):
+        """Build the category hierarchy map from root category pages (pass 1).
+
+        Only processes root category pages — those whose name after stripping
+        the 'Category' prefix contains no '/'. For example:
+        - CategoryDocs -> key='Docs' (processed)
+        - CategoryTopics  -> key='Topics'  (processed)
+        - CategoryTopics/Sub -> skipped (subpage, not a root category)
+
+        For each root category page, finds the primary category reference in
+        the page content and splits it into parent + suffix:
+        - [[CategoryTopics/Sub]] -> parent='Topics', suffix='Sub'
+        - [[CategoryTeam]] -> parent='Team', suffix=''
+
+        Stores result in ctx.category_map:
+            stripped_name -> (parent_or_None, suffix_or_empty_string)
+
+        Example:
+            CategoryDocs content has [[CategoryTeam/Archive]]:
+                'Docs': ('Team', 'Archive')
+            CategoryTeam content has [[CategoryOrg]]:
+                'Team': ('Org', '')
+
+        Then calls resolve_category_map() to build ctx.resolved_categories.
+        """
+        category_map = {}
+        seen_pages = {}
+
+        # collect current revision of each root category page
+        # MoinMoin stores the current revision id in a 'current' file
+        pages_dir = str(self.ctx.moin_data.joinpath("pages"))
+        for entry in self.entries:
+            decoded = entry.decode_moin_name(entry.page_name)
+            if not decoded.startswith("Category"):
+                continue
+            stripped = decoded[len("Category"):]
+            # skip subpages e.g. CategoryTopics/Sub
+            if "/" in stripped:
+                continue
+            if stripped in seen_pages:
+                continue
+            if entry.edit_type != MoinEditType.PAGE:
+                continue
+            # check this is the current revision via the 'current' file
+            current_file = os.path.join(pages_dir, entry.page_path, "current")
+            try:
+                current_rev = open(current_file).read().strip()
+            except OSError:
+                current_rev = None
+            if current_rev and entry.page_revision != current_rev:
+                continue
+            seen_pages[stripped] = entry
+
+        # build map entries
+        for stripped, entry in seen_pages.items():
+            refs = entry.extract_category_refs()
+            parent = None
+            suffix = ""
+            for ref in refs:
+                # strip Category prefix if present
+                if ref.startswith("Category"):
+                    ref = ref[len("Category"):]
+                # skip self-references
+                if ref.split("/", 1)[0] == stripped:
+                    continue
+                # found a valid parent ref — split into parent and suffix
+                parts = ref.split("/", 1)
+                parent = parts[0]
+                suffix = parts[1] if len(parts) > 1 else ""
+                break
+            category_map[stripped] = (parent, suffix)
+            self.ctx.logger.debug(
+                f"Category map: '{stripped}' -> parent={parent!r}, suffix={suffix!r}"
+            )
+
+        self.ctx.category_map = category_map
+        self.ctx.logger.info(
+            f"Built category map with {len(category_map)} entries"
+        )
+        self.resolve_category_map()
+
+    def resolve_category_map(self):
+        """Resolve all category names to full paths (still part of pass 1).
+
+        Iteratively resolves ctx.category_map {name: (parent, suffix)}
+        into ctx.resolved_categories {name: full_path}.
+
+        Example with:
+            'Docs': ('Team', 'Archive')
+            'Team': ('Org', '')
+
+        Resolves to:
+            'Team':  'Org'
+            'Docs':   'Org/Archive/Docs'
+
+        Cycle detection: if a full pass produces no resolutions, remaining
+        entries must be in a cycle and are resolved using their name as-is.
+        """
+        unresolved = dict(self.ctx.category_map)
+        resolved = {}
+
+        while unresolved:
+            stuck = True
+            for name, (parent, suffix) in list(unresolved.items()):
+                if parent is None or parent not in unresolved:
+                    # parent is resolved, doesn't exist, or there is no parent
+                    parent_path = resolved.get(parent, parent) if parent else None
+                    parts = [p for p in [parent_path, suffix] if p]
+                    if name != suffix:
+                        parts.append(name)
+                    resolved[name] = "/".join(parts) if parts else name
+                    del unresolved[name]
+                    stuck = False
+
+            if stuck:
+                # cycle detected — resolve remaining as-is
+                for name in list(unresolved.keys()):
+                    self.ctx.logger.warning(
+                        f"Circular category reference detected for '{name}', "
+                        f"using name as-is"
+                    )
+                    resolved[name] = name
+                break
+
+        self.ctx.resolved_categories = resolved
+        self.ctx.logger.debug(f"Resolved categories: {resolved}")
 
     def create_home_page(self) -> Tuple[MoinEditEntry, str]:
         """Builds a synthetic home page to link all the wiki entries together"""
