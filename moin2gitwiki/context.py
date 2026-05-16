@@ -55,21 +55,7 @@ class Moin2GitContext:
     wiki_type: str = attr.ib(default="gollum")
     log_file: str = attr.ib(default=LOG_FILE)
     category_folders: bool = attr.ib(default=False)
-    path_registry: dict = attr.ib(factory=dict)
-    category_map: dict = attr.ib(factory=dict)
-    resolved_categories: dict = attr.ib(factory=dict)
-
-    def resolve_category(self, stripped_name: str) -> str:
-        """Resolve a stripped category name to its full folder path.
-
-        Simple lookup into resolved_categories built by resolve_category_map().
-        Falls back to the stripped name itself if not found.
-
-        Examples:
-            'Topics'  -> 'Topics'
-            'Docs'    -> 'Team/Archive/Docs'
-        """
-        return self.resolved_categories.get(stripped_name, stripped_name)
+    category_tree = attr.ib(default=None)  # CategoryTree, set by GitExportStream
 
     @property
     def moin_data(self):

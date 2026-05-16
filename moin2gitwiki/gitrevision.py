@@ -34,6 +34,7 @@ class GitExportStream:
     def __attrs_post_init__(self):
         if getattr(self.ctx, "category_folders", False):
             self._category_tree = CategoryTree(logger=self.ctx.logger)
+            self.ctx.category_tree = self._category_tree
 
     def add_wiki_revision(
         self,

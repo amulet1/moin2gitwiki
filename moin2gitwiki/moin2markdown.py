@@ -131,11 +131,13 @@ class Moin2Markdown:
             # when category-folders is enabled, replace CategoryXxx with Xxx
             # for all known categories so converted pages use clean names
             if getattr(self.ctx, "category_folders", False):
-                for stripped in self.ctx.resolved_categories:
-                    translated = translated.replace(
-                        f"Category{stripped}".encode(),
-                        stripped.encode(),
-                    )
+                tree = getattr(self.ctx, "category_tree", None)
+                if tree is not None:
+                    for stripped in tree.category_nodes:
+                        translated = translated.replace(
+                            f"Category{stripped}".encode(),
+                            stripped.encode(),
+                        )
             return translated
 
     def extract_content_section(self, html: str) -> str:
