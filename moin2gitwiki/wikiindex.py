@@ -4,6 +4,8 @@ from datetime import datetime
 from datetime import timedelta
 from enum import auto
 from enum import Enum
+from typing import NamedTuple
+from typing import Optional
 from typing import Tuple
 
 import attr
@@ -19,6 +21,25 @@ _CATEGORY_BARE = re.compile(r'(?:^|(?<=\s))Category([\w/]+)')
 _CATEGORY_ONLY_LINE = re.compile(
     r'^[\s\-]*(?:(?:\[\[Category[^\]]+\]\]|Category[\w/]+)[\s\-]*)+$'
 )
+
+
+class CategoryPlacement(NamedTuple):
+    """Classification of a MoinMoin page for category tree placement.
+
+    Attributes:
+        kind:            One of 'category', 'subpage', or 'page'.
+        category_name:   Stripped category key e.g. "Foo". Only set for kind='category'.
+        parent_category: Stripped key of the parent category, or None.
+        suffix:          Path components from the category ref between parent and
+                         page_name. Only set for kind='page'; always "" otherwise.
+        page_name:       Sanitized output path for this page (may contain /).
+                         Not meaningful for kind='category'.
+    """
+    kind: str
+    category_name: Optional[str]
+    parent_category: Optional[str]
+    suffix: str
+    page_name: str
 
 
 class MoinEditType(Enum):
@@ -217,6 +238,85 @@ class MoinEditEntry:
         """
         refs = self.extract_category_refs()
         return refs[0] if refs else None
+
+    def category_placement(self) -> CategoryPlacement:
+        """Classify this page for category tree placement.
+
+        Three cases, determined by the decoded page name:
+
+        'category' — name is "CategoryFoo" (no slash after stripping prefix).
+            The category key is "Foo". Parent and suffix are read from content.
+
+        'subpage' — name is "CategoryFoo/Bar/Baz" (slash present).
+            Belongs to category "Foo" by name alone; "Bar/Baz" is the page_name.
+            No content reading needed.
+
+        'page' — any other name.
+            Parent category and suffix come from the primary category ref in
+            content, e.g. [[CategoryFoo/Sub]] -> parent="Foo", suffix="Sub".
+
+        Returns a CategoryPlacement with fields populated as described above.
+        All page_name values are sanitized and ready for path assembly.
+        """
+        decoded = self.decode_moin_name(self.page_name)
+
+        if decoded.startswith("Category"):
+            stripped = decoded[len("Category"):]
+            slash = stripped.find("/")
+
+            if slash == -1:
+                # --- kind: 'category' ---
+                # Read parent from content, same logic as build_category_map().
+                parent_category = None
+                suffix = ""
+                for ref in self.extract_category_refs():
+                    # skip self-references
+                    if ref.split("/", 1)[0] == stripped:
+                        continue
+                    parts = ref.split("/", 1)
+                    parent_category = parts[0]
+                    suffix = parts[1] if len(parts) > 1 else ""
+                    break
+                return CategoryPlacement(
+                    kind="category",
+                    category_name=stripped,
+                    parent_category=parent_category,
+                    suffix=suffix,
+                    page_name="",
+                )
+
+            else:
+                # --- kind: 'subpage' ---
+                # e.g. "CategoryFoo/Bar/Baz" -> parent="Foo", page="Bar/Baz"
+                cat_name = stripped[:slash]
+                remainder = stripped[slash + 1:]
+                page_name = self.sanitize_for_path(remainder)
+                return CategoryPlacement(
+                    kind="subpage",
+                    category_name=None,
+                    parent_category=cat_name,
+                    suffix="",
+                    page_name=page_name,
+                )
+
+        else:
+            # --- kind: 'page' ---
+            page_name = self.sanitize_for_path(decoded)
+            ref = self.primary_category_ref()
+            if ref:
+                parts = ref.split("/", 1)
+                parent_category = parts[0]
+                suffix = parts[1] if len(parts) > 1 else ""
+            else:
+                parent_category = None
+                suffix = ""
+            return CategoryPlacement(
+                kind="page",
+                category_name=None,
+                parent_category=parent_category,
+                suffix=suffix,
+                page_name=page_name,
+            )
 
     def markdown_transform(self, thing: str) -> str:
         """Decode MoinMoin name and convert to a Markdown page path.
