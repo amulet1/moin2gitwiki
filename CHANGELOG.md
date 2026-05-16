@@ -22,6 +22,9 @@ Unreleased Changes
   `(20)` → space, `(2d)` → `-`, `(2e20)` → `. `
 - fix: attachment paths now decoded from MoinMoin encoding so they match
   decoded page names, preventing broken attachment links
+- fix: paragraph breaks lost when stripping line marker CSS classes —
+  `tag.unwrap()` replaced with `del tag["class"]` so pandoc preserves
+  paragraph and list structure
 - feat: add `--wiki-type [gollum|gitea|otterwiki]` option to `fast-export`
   (default: `gollum`) — sets appropriate defaults for page naming, subpage
   structure and attachment layout per target platform
@@ -29,6 +32,16 @@ Unreleased Changes
   to `None` and derived from `--wiki-type` when not explicitly set:
   `--strip-dots`, `--spaces-to-hyphens`, `--subpages-as-dirs`,
   `--attachment-dir`
+- feat: add `--log-file` option to control log file path (default:
+  `moin2gitwiki.log` in current directory, also via `MOIN2GIT_LOG_FILE`)
+- feat: add `--category-folders` option — uses MoinMoin category tags to
+  organize converted pages into subfolders via two-pass category map
+  resolution. Off by default for backward compatibility.
+- feat: strip `Category` prefix from known category names in converted
+  content when `--category-folders` is enabled
+- docs: add MoinMoin Preparation section documenting surge protection
+  requirement (`surge_action_limits = None`) before running conversion
+- docs: update Installation section to reference fork instead of PyPI
 
 <!-- insertion marker -->
 [0.8.0] - 2023-04-24

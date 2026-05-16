@@ -128,6 +128,14 @@ class Moin2Markdown:
             content = self.fetch_cache.fetch(target.url)
             main_content = self.extract_content_section(content)
             translated = self.translate(main_content)
+            # when category-folders is enabled, replace CategoryXxx with Xxx
+            # for all known categories so converted pages use clean names
+            if getattr(self.ctx, "category_folders", False):
+                for stripped in self.ctx.resolved_categories:
+                    translated = translated.replace(
+                        f"Category{stripped}".encode(),
+                        stripped.encode(),
+                    )
             return translated
 
     def extract_content_section(self, html: str) -> str:
