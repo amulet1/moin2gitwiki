@@ -53,6 +53,8 @@ class CategoryNode:
         child_categories: Stripped names of direct child categories
                           (categories that declared this one as their parent).
         child_pages:      page_path keys of pages tagged with this category.
+        blob_mark:        Latest content mark for the category page itself —
+                          needed to re-emit the file when the category moves.
     """
     name: str
     parent_category: Optional[str] = None
@@ -60,6 +62,7 @@ class CategoryNode:
     resolved: str = ""
     child_categories: set = field(default_factory=set)
     child_pages: set = field(default_factory=set)
+    blob_mark: Optional[int] = None
 
 
 @dataclass
@@ -201,11 +204,12 @@ class CategoryTree:
     # Internal cascade helpers
     # ------------------------------------------------------------------
 
-    def _recompute_category(self, name: str) -> list[tuple[str, str]]:
+    def _recompute_category(self, name: str) -> list[tuple[str, str, Optional[int]]]:
         """Recompute .resolved for a category node and cascade to all descendants.
 
-        Returns list of (old_resolved, new_resolved) for every page that moved.
-        Category folder paths themselves are not included — only page paths are.
+        Returns list of (old_resolved, new_resolved, blob_mark) for every page
+        or category that moved.  The top-level category itself is not included —
+        callers handle that directly.
         """
         node = self.category_nodes.get(name)
         if node is None:
@@ -218,12 +222,21 @@ class CategoryTree:
         node.resolved = new_resolved
         self.logger.debug(f"Category '{name}' resolved -> '{new_resolved}'")
 
-        renames: list[tuple[str, str]] = []
+        renames: list[tuple[str, str, Optional[int]]] = []
 
         # cascade to child categories first (depth-first so their .resolved
         # is correct before child pages are processed)
         for child_name in node.child_categories:
-            renames.extend(self._recompute_category(child_name))
+            child = self.category_nodes.get(child_name)
+            if child is None:
+                continue
+            old_child_resolved = child.resolved
+            child_renames = self._recompute_category(child_name)
+            new_child_resolved = child.resolved
+            # include the child category's own file move
+            if old_child_resolved != new_child_resolved:
+                renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
+            renames.extend(child_renames)
 
         # cascade to pages directly attached to this category
         for page_path in node.child_pages:
@@ -233,8 +246,8 @@ class CategoryTree:
 
         return renames
 
-    def _recompute_page(self, page: PageNode) -> list[tuple[str, str]]:
-        """Recompute .resolved for a page. Returns [(old, new)] if path changed."""
+    def _recompute_page(self, page: PageNode) -> list[tuple[str, str, Optional[int]]]:
+        """Recompute .resolved for a page. Returns [(old, new, blob_mark)] if path changed."""
         old_resolved = page.resolved
         candidate = self._compute_page_resolved(page)
         new_resolved = self._unique_path(candidate, page.page_path)
@@ -249,7 +262,7 @@ class CategoryTree:
         self.logger.debug(
             f"Page '{page.page_path}': '{old_resolved}' -> '{new_resolved}'"
         )
-        return [(old_resolved, new_resolved)]
+        return [(old_resolved, new_resolved, page.blob_mark)]
 
     def _detach_page_from_category(self, page: PageNode):
         """Remove page from its current parent category's child_pages set."""
@@ -307,8 +320,9 @@ class CategoryTree:
             suffix:          Path suffix between parent and this node
 
         Returns:
-            List of (old_resolved, new_resolved) for pages that moved.
-            Category folder paths themselves are not included — only pages.
+            List of (old_resolved, new_resolved, blob_mark) for pages and child
+            categories that moved.  The category itself is not included — callers
+            handle its own file move directly.
         """
         node = self.category_nodes.get(name)
 
@@ -343,7 +357,8 @@ class CategoryTree:
         parent reference and degrade to bare-name resolution.  Direct child
         pages lose their parent and move to their name-only path.
 
-        Returns list of (old_resolved, new_resolved) for affected pages.
+        Returns list of (old_resolved, new_resolved, blob_mark) for affected pages
+        and child categories.
         """
         node = self.category_nodes.get(name)
         if node is None:
@@ -352,14 +367,18 @@ class CategoryTree:
         # detach from parent
         self._detach_category_from_parent(node)
 
+        # save child sets before deleting — we'll iterate them after
+        child_categories = set(node.child_categories)
+        child_pages = set(node.child_pages)
+
         # detach child categories — they now have no parent
-        for child_name in list(node.child_categories):
+        for child_name in child_categories:
             child = self.category_nodes.get(child_name)
             if child:
                 child.parent_category = None
 
         # detach child pages — they now have no parent category
-        for page_path in list(node.child_pages):
+        for page_path in child_pages:
             page = self.page_nodes.get(page_path)
             if page:
                 page.parent_category = None
@@ -367,12 +386,20 @@ class CategoryTree:
         del self.category_nodes[name]
 
         # recompute everything that was under this node
-        renames: list[tuple[str, str]] = []
+        renames: list[tuple[str, str, Optional[int]]] = []
 
-        for child_name in node.child_categories:
-            renames.extend(self._recompute_category(child_name))
+        for child_name in child_categories:
+            child = self.category_nodes.get(child_name)
+            if child is None:
+                continue
+            old_child_resolved = child.resolved
+            child_renames = self._recompute_category(child_name)
+            new_child_resolved = child.resolved
+            if old_child_resolved != new_child_resolved:
+                renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
+            renames.extend(child_renames)
 
-        for page_path in node.child_pages:
+        for page_path in child_pages:
             page = self.page_nodes.get(page_path)
             if page:
                 renames.extend(self._recompute_page(page))
@@ -465,3 +492,16 @@ class CategoryTree:
         """Return the current resolved path for a category, or None if unknown."""
         node = self.category_nodes.get(name)
         return node.resolved if node else None
+
+    def set_category_blob_mark(self, name: str, blob_mark: int):
+        """Store the latest content mark for a category page.
+
+        Called after writing the category page content, before update_category.
+        The mark is used to re-emit the file if the category later moves due
+        to a cascade from an ancestor change.
+        """
+        node = self.category_nodes.get(name)
+        if node is None:
+            node = CategoryNode(name=name, resolved=name)
+            self.category_nodes[name] = node
+        node.blob_mark = blob_mark
