@@ -149,6 +149,24 @@ class GitExportStream:
             blob_ref = self.output_blob(content)
 
             if placement.kind == "category":
+                # On RENAME, delete the old category node first so its children
+                # lose their parent and cascade to bare-name paths, before the
+                # new category node is created.
+                if revision.edit_type == MoinEditType.RENAME and revision.previous_page_name:
+                    prev_decoded = revision.decode_moin_name(revision.previous_page_name)
+                    if prev_decoded.startswith("Category"):
+                        old_cat_name = prev_decoded[len("Category"):]
+                        # only root category pages have tree nodes
+                        if "/" not in old_cat_name:
+                            old_cat_resolved = tree.get_category_resolved(old_cat_name)
+                            delete_renames = tree.delete_category(old_cat_name)
+                            if old_cat_resolved:
+                                file_ops.append(f"D {old_cat_resolved}.md\n")
+                            for old, new, blob_mark in delete_renames:
+                                if blob_mark is not None:
+                                    file_ops.append(f"D {old}.md\n")
+                                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+
                 old_resolved = tree.get_category_resolved(placement.category_name)
                 tree.set_category_blob_mark(placement.category_name, blob_ref)
                 renames = tree.update_category(
