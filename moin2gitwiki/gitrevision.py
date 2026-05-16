@@ -1,7 +1,9 @@
 import typing
+from typing import List, Optional
 
 import attr
 
+from .categorytree import CategoryTree
 from .wikiindex import MoinEditEntry
 from .wikiindex import MoinEditType
 
@@ -27,6 +29,11 @@ class GitExportStream:
     last_commit_mark: int = attr.ib(default=None)
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
+    _category_tree: Optional[CategoryTree] = attr.ib(default=None, init=False)
+
+    def __attrs_post_init__(self):
+        if getattr(self.ctx, "category_folders", False):
+            self._category_tree = CategoryTree(logger=self.ctx.logger)
 
     def add_wiki_revision(
         self,
@@ -41,6 +48,17 @@ class GitExportStream:
             content:    The content of the wiki object, after translation, as bytes
 
         """
+        if self._category_tree is not None:
+            self._add_wiki_revision_categorized(revision, content)
+        else:
+            self._add_wiki_revision_plain(revision, content)
+
+    def _add_wiki_revision_plain(
+        self,
+        revision: MoinEditEntry,
+        content: bytes,
+    ):
+        """Revision handling without category tree — original behaviour."""
         name = revision.markdown_page_path()
         if content is not None:
             blob_ref = self.output_blob(content)
@@ -80,7 +98,115 @@ class GitExportStream:
             self.write_string(
                 f"M 100644 :{blob_ref} {revision.attachment_destination()}\n\n",
             )
+        self.last_commit_mark = commit_ref
+        self.ctx.logger.debug(f"Written commit {commit_ref}")
 
+    def _add_wiki_revision_categorized(
+        self,
+        revision: MoinEditEntry,
+        content: bytes,
+    ):
+        """Revision handling using CategoryTree for path resolution.
+
+        Computes file paths incrementally from the category tree rather than
+        from the static pre-built category map.  A single commit may contain
+        multiple file operations when a category change cascades to child pages
+        or categories.
+        """
+        tree = self._category_tree
+        placement = revision.category_placement()
+        file_ops: List[str] = []  # file operation lines for this commit
+        description: Optional[str] = None
+
+        if revision.edit_type == MoinEditType.ATTACH:
+            # Attachments are not affected by category placement
+            blob_ref = self.output_blob(revision.attachment_content_bytes())
+            dest = revision.attachment_destination()
+            file_ops.append(f"M 100644 :{blob_ref} {dest}\n")
+            description = f"Attach {revision.attachment} to {placement.page_name}"
+
+        elif revision.edit_type == MoinEditType.DELETE:
+            if placement.kind == "category":
+                old_resolved = tree.get_category_resolved(placement.category_name)
+                renames = tree.delete_category(placement.category_name)
+                if old_resolved:
+                    file_ops.append(f"D {old_resolved}.md\n")
+                for old, new, blob_mark in renames:
+                    if blob_mark is not None:
+                        file_ops.append(f"D {old}.md\n")
+                        file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+                description = f"Delete {placement.category_name}"
+            else:
+                old_resolved = tree.delete_page(revision.page_path)
+                if old_resolved:
+                    file_ops.append(f"D {old_resolved}.md\n")
+                description = f"Delete {placement.page_name}"
+
+        elif revision.edit_type in (MoinEditType.PAGE, MoinEditType.RENAME):
+            if content is None:
+                return  # nothing to commit
+            blob_ref = self.output_blob(content)
+
+            if placement.kind == "category":
+                old_resolved = tree.get_category_resolved(placement.category_name)
+                tree.set_category_blob_mark(placement.category_name, blob_ref)
+                renames = tree.update_category(
+                    placement.category_name,
+                    placement.parent_category,
+                    placement.suffix,
+                )
+                new_resolved = tree.get_category_resolved(placement.category_name)
+                if old_resolved and old_resolved != new_resolved:
+                    file_ops.append(f"D {old_resolved}.md\n")
+                file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+                for old, new, blob_mark in renames:
+                    if blob_mark is not None:
+                        file_ops.append(f"D {old}.md\n")
+                        file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+                description = f"Update {new_resolved}"
+
+            else:  # 'page' or 'subpage'
+                # For RENAME, page_path is stable (MoinMoin renames the directory);
+                # update_page detects the path change from old vs new placement.
+                old_resolved, new_resolved = tree.update_page(
+                    revision.page_path,
+                    placement.page_name,
+                    placement.parent_category,
+                    placement.suffix,
+                    blob_ref,
+                )
+                if old_resolved:
+                    file_ops.append(f"D {old_resolved}.md\n")
+                file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+                description = f"Add/Update {new_resolved}"
+
+        if not file_ops:
+            return
+
+        self._emit_commit(revision, description, file_ops)
+
+    def _emit_commit(
+        self,
+        revision: MoinEditEntry,
+        description: Optional[str],
+        file_ops: List[str],
+    ):
+        """Write a commit with the given file operations."""
+        if self.last_commit_mark is None:
+            self.write_string(f"reset {self.branch}\n")
+        self.write_string(f"commit {self.branch}\n")
+        commit_ref = self.write_next_mark()
+        self.write_changer("author", revision)
+        self.write_changer("committer", revision)
+        if revision.comment:
+            self.output_data_string(f"{revision.comment}\n")
+        else:
+            self.output_data_string(f"{description}\n")
+        if self.last_commit_mark is not None:
+            self.write_string(f"from :{self.last_commit_mark}\n")
+        for op in file_ops:
+            self.write_string(op)
+        self.write_string("\n")
         self.last_commit_mark = commit_ref
         self.ctx.logger.debug(f"Written commit {commit_ref}")
 
