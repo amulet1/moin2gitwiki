@@ -233,10 +233,6 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
     #
-    # build category map if needed (pass 1)
-    if ctx.category_folders:
-        revisions.build_category_map()
-    #
     # build the translator
     translator = Moin2Markdown.create_translator(
         ctx=ctx,
@@ -294,10 +290,6 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     # build your initial revision set from the wiki data
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
-    #
-    # build category map if needed (pass 1)
-    if ctx.category_folders:
-        revisions.build_category_map()
     #
     # build the translator
     translator = Moin2Markdown.create_translator(
