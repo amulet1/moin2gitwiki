@@ -304,6 +304,11 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
         if revision.page_name == page and int(revision.page_revision) == version:
             content = translator.retrieve_and_translate(revision=revision)
             print(content.decode("utf-8"))
+            break
+    else:
+        ctx.logger.debug(f"Page '{page}' revision {version} not found")
+        click.echo(f"Error: page '{page}' revision {version} not found", err=True)
+        raise SystemExit(1)
 
 
 # -----------------------------------------------------------------------
