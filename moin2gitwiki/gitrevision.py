@@ -116,7 +116,7 @@ class GitExportStream:
         """
         tree = self._category_tree
         placement = revision.category_placement()
-        file_ops: List[str] = []  # file operation lines for this commit
+        file_ops: List[str] = []
         description: Optional[str] = None
 
         if revision.edit_type == MoinEditType.ATTACH:
@@ -127,82 +127,91 @@ class GitExportStream:
             description = f"Attach {revision.attachment} to {placement.page_name}"
 
         elif revision.edit_type == MoinEditType.DELETE:
-            if placement.kind == "category":
-                old_resolved = tree.get_category_resolved(placement.category_name)
-                renames = tree.delete_category(placement.category_name)
-                if old_resolved is not None:
-                    file_ops.append(f"D {old_resolved}.md\n")
-                for old, new, blob_mark in renames:
-                    if blob_mark is not None:
-                        file_ops.append(f"D {old}.md\n")
-                        file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
-                description = f"Delete {placement.category_name}"
-            else:
-                old_resolved = tree.delete_page(revision.page_path)
-                if old_resolved is not None:
-                    file_ops.append(f"D {old_resolved}.md\n")
-                description = f"Delete {placement.page_name}"
+            file_ops.extend(self._delete_side(revision, placement, tree))
+            description = f"Delete {placement.category_name or placement.page_name}"
 
-        elif revision.edit_type in (MoinEditType.PAGE, MoinEditType.RENAME):
+        elif revision.edit_type == MoinEditType.RENAME:
             if content is None:
-                return  # nothing to commit
+                return
             blob_ref = self.output_blob(content)
+            # RENAME = delete old side + add new side
+            prev_placement = revision.prev_category_placement()
+            file_ops.extend(self._delete_side(revision, prev_placement, tree))
+            file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
+            description = f"Rename to {placement.category_name or placement.page_name}"
 
-            if placement.kind == "category":
-                # On RENAME, delete the old category node first so its children
-                # lose their parent and cascade to bare-name paths, before the
-                # new category node is created.
-                if revision.edit_type == MoinEditType.RENAME and revision.previous_page_name:
-                    prev_decoded = revision.decode_moin_name(revision.previous_page_name)
-                    if prev_decoded.startswith("Category"):
-                        old_cat_name = prev_decoded[len("Category"):].strip()
-                        # only root category pages have tree nodes
-                        if "/" not in old_cat_name:
-                            old_cat_resolved = tree.get_category_resolved(old_cat_name)
-                            delete_renames = tree.delete_category(old_cat_name)
-                            if old_cat_resolved is not None:
-                                file_ops.append(f"D {old_cat_resolved}.md\n")
-                            for old, new, blob_mark in delete_renames:
-                                if blob_mark is not None:
-                                    file_ops.append(f"D {old}.md\n")
-                                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
-
-                old_resolved = tree.get_category_resolved(placement.category_name)
-                tree.set_category_blob_mark(placement.category_name, blob_ref)
-                renames = tree.update_category(
-                    placement.category_name,
-                    placement.parent_category,
-                    placement.suffix,
-                )
-                new_resolved = tree.get_category_resolved(placement.category_name)
-                if old_resolved is not None and old_resolved != new_resolved:
-                    file_ops.append(f"D {old_resolved}.md\n")
-                file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
-                for old, new, blob_mark in renames:
-                    if blob_mark is not None:
-                        file_ops.append(f"D {old}.md\n")
-                        file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
-                description = f"Update {new_resolved}"
-
-            else:  # 'page' or 'subpage'
-                # For RENAME, page_path is stable (MoinMoin renames the directory);
-                # update_page detects the path change from old vs new placement.
-                old_resolved, new_resolved = tree.update_page(
-                    revision.page_path,
-                    placement.page_name,
-                    placement.parent_category,
-                    placement.suffix,
-                    blob_ref,
-                )
-                if old_resolved is not None:
-                    file_ops.append(f"D {old_resolved}.md\n")
-                file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
-                description = f"Add/Update {new_resolved}"
+        elif revision.edit_type == MoinEditType.PAGE:
+            if content is None:
+                return
+            blob_ref = self.output_blob(content)
+            file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
+            description = f"Add/Update {placement.category_name or placement.page_name}"
 
         if not file_ops:
             return
 
         self._emit_commit(revision, description, file_ops)
+
+    def _delete_side(
+        self,
+        revision: MoinEditEntry,
+        placement,
+        tree: CategoryTree,
+    ) -> List[str]:
+        """Compute file ops for removing a page or category from the tree."""
+        file_ops: List[str] = []
+        if placement.kind == "category":
+            old_resolved = tree.get_category_resolved(placement.category_name)
+            renames = tree.delete_category(placement.category_name)
+            if old_resolved is not None:
+                file_ops.append(f"D {old_resolved}.md\n")
+            for old, new, blob_mark in renames:
+                if blob_mark is not None:
+                    file_ops.append(f"D {old}.md\n")
+                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+        else:
+            old_resolved = tree.delete_page(revision.page_path)
+            if old_resolved is not None:
+                file_ops.append(f"D {old_resolved}.md\n")
+        return file_ops
+
+    def _add_side(
+        self,
+        placement,
+        page_path: str,
+        blob_ref: int,
+        tree: CategoryTree,
+    ) -> List[str]:
+        """Compute file ops for adding or updating a page or category in the tree."""
+        file_ops: List[str] = []
+        if placement.kind == "category":
+            old_resolved = tree.get_category_resolved(placement.category_name)
+            tree.set_category_blob_mark(placement.category_name, blob_ref)
+            renames = tree.update_category(
+                placement.category_name,
+                placement.parent_category,
+                placement.suffix,
+            )
+            new_resolved = tree.get_category_resolved(placement.category_name)
+            if old_resolved is not None and old_resolved != new_resolved:
+                file_ops.append(f"D {old_resolved}.md\n")
+            file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+            for old, new, blob_mark in renames:
+                if blob_mark is not None:
+                    file_ops.append(f"D {old}.md\n")
+                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+        else:  # 'page' or 'subpage'
+            old_resolved, new_resolved = tree.update_page(
+                page_path,
+                placement.page_name,
+                placement.parent_category,
+                placement.suffix,
+                blob_ref,
+            )
+            if old_resolved is not None:
+                file_ops.append(f"D {old_resolved}.md\n")
+            file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+        return file_ops
 
     def _emit_commit(
         self,

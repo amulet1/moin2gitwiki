@@ -241,6 +241,52 @@ class MoinEditEntry:
         refs = self.extract_category_refs()
         return refs[0] if refs else None
 
+    def prev_category_placement(self) -> CategoryPlacement:
+        """Classify the previous page name for RENAME delete-side handling.
+
+        Name-only classification — content is never read for the old side
+        of a rename.  Returns a dummy 'page' placement with empty page_name
+        if there is no previous name.
+        """
+        if not self.previous_page_name:
+            return CategoryPlacement(
+                kind="page", category_name=None,
+                parent_category=None, suffix="", page_name="",
+            )
+
+        decoded = self.decode_moin_name(self.previous_page_name)
+
+        if decoded.startswith("Category"):
+            stripped = decoded[len("Category"):].strip()
+            if stripped:
+                if "/" not in stripped:
+                    return CategoryPlacement(
+                        kind="category",
+                        category_name=stripped,
+                        parent_category=None,
+                        suffix="",
+                        page_name="",
+                    )
+                else:
+                    slash = stripped.index("/")
+                    cat_name = stripped[:slash].strip()
+                    remainder = stripped[slash + 1:]
+                    return CategoryPlacement(
+                        kind="subpage",
+                        category_name=None,
+                        parent_category=cat_name,
+                        suffix="",
+                        page_name=self.sanitize_for_path(remainder),
+                    )
+
+        return CategoryPlacement(
+            kind="page",
+            category_name=None,
+            parent_category=None,
+            suffix="",
+            page_name=self.sanitize_for_path(decoded),
+        )
+
     def category_placement(self) -> CategoryPlacement:
         """Classify this page for category tree placement.
 
