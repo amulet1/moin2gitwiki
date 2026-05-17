@@ -197,7 +197,7 @@ class CategoryTree:
 
     def _unregister(self, resolved: str, page_path: str):
         """Remove entry only if it belongs to this page (guards against stale removes)."""
-        if resolved and self._path_registry.get(resolved) == page_path:
+        if resolved is not None and self._path_registry.get(resolved) == page_path:
             del self._path_registry[resolved]
 
     # ------------------------------------------------------------------

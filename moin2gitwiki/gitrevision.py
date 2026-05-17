@@ -130,7 +130,7 @@ class GitExportStream:
             if placement.kind == "category":
                 old_resolved = tree.get_category_resolved(placement.category_name)
                 renames = tree.delete_category(placement.category_name)
-                if old_resolved:
+                if old_resolved is not None:
                     file_ops.append(f"D {old_resolved}.md\n")
                 for old, new, blob_mark in renames:
                     if blob_mark is not None:
@@ -139,7 +139,7 @@ class GitExportStream:
                 description = f"Delete {placement.category_name}"
             else:
                 old_resolved = tree.delete_page(revision.page_path)
-                if old_resolved:
+                if old_resolved is not None:
                     file_ops.append(f"D {old_resolved}.md\n")
                 description = f"Delete {placement.page_name}"
 
@@ -160,7 +160,7 @@ class GitExportStream:
                         if "/" not in old_cat_name:
                             old_cat_resolved = tree.get_category_resolved(old_cat_name)
                             delete_renames = tree.delete_category(old_cat_name)
-                            if old_cat_resolved:
+                            if old_cat_resolved is not None:
                                 file_ops.append(f"D {old_cat_resolved}.md\n")
                             for old, new, blob_mark in delete_renames:
                                 if blob_mark is not None:
@@ -175,7 +175,7 @@ class GitExportStream:
                     placement.suffix,
                 )
                 new_resolved = tree.get_category_resolved(placement.category_name)
-                if old_resolved and old_resolved != new_resolved:
+                if old_resolved is not None and old_resolved != new_resolved:
                     file_ops.append(f"D {old_resolved}.md\n")
                 file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
                 for old, new, blob_mark in renames:
@@ -194,7 +194,7 @@ class GitExportStream:
                     placement.suffix,
                     blob_ref,
                 )
-                if old_resolved:
+                if old_resolved is not None:
                     file_ops.append(f"D {old_resolved}.md\n")
                 file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
                 description = f"Add/Update {new_resolved}"
