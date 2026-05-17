@@ -147,7 +147,14 @@ def save_users(ctx, filename):
     default="http://localhost/jrtwiki/",
     envvar="MOIN2GIT_PREFIX",
 )
-@click.option("--home-page/--no-home-page", default=True)
+@click.option(
+    "--home-page",
+    type=click.Choice(["none", "end", "incremental"], case_sensitive=False),
+    default="end",
+    envvar="MOIN2GIT_HOME_PAGE",
+    help="Home page generation mode: none=skip, end=generate once at end (default), "
+         "incremental=update on every page change.",
+)
 @click.option(
     "--wiki-type",
     type=click.Choice(["gollum", "gitea", "otterwiki"], case_sensitive=False),
@@ -246,7 +253,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     os.chdir(destination)
     subprocess.run(["git", "init"])
     with subprocess.Popen(["git", "fast-import"], stdin=subprocess.PIPE) as gitstream:
-        export = GitExportStream(output=gitstream.stdin, ctx=ctx)
+        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page)
         with click.progressbar(revisions.entries) as entries:
             for revision in entries:
                 lines = revision.wiki_content()
@@ -256,10 +263,18 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
                     content=content,
                     lines=lines,
                 )
-        if home_page:
-            revision, content = revisions.create_home_page()
-            export.add_wiki_revision(revision=revision, content=content.encode("utf-8"))
+        if home_page == "end":
+            export.emit_home_page()
         export.end_stream()
+    if export.home_overwritten:
+        click.echo(
+            click.style(
+                "Warning: wiki has an existing 'Home' page that was overwritten by the "
+                "synthetic Home.md. Use --home-page=none to suppress this.",
+                fg="yellow",
+            ),
+            err=True,
+        )
     subprocess.run(["git", "gc", "--aggressive"])  # pack it
     subprocess.run(["git", "checkout", "master"])  # check out the data
 

@@ -61,6 +61,25 @@ Unreleased Changes
 - fix: leading/trailing spaces stripped from all path components in
   `sanitize_for_path()`, and from category names and suffixes parsed
   from page content
+- fix: revision handling unified — CategoryTree always initialized
+  regardless of `--category-folders`; plain and category-folders modes
+  share a single `add_wiki_revision()` code path
+- fix: category detection restricted to lines consisting entirely of
+  category references, matching MoinMoin editor behaviour; category
+  refs in tables, prose, or headings are ignored; lines scanned in
+  reverse so bottom-of-page membership declarations are found first
+- fix: `markdown_page_name()` and `markdown_page_path()` now return
+  category-resolved paths when `--category-folders` is enabled, fixing
+  `Home.md` links and attachment paths
+- fix: `translate_page` command exits with error and message on stderr
+  when the requested page/revision is not found
+- fix: wiki page content read once per revision and passed through the
+  call chain, avoiding redundant disk reads
+- feat: replace `--home-page/--no-home-page` with `--home-page
+  [none|end|incremental]` — `end` generates Home.md once at the end
+  (default), `incremental` updates it as part of every commit that
+  changes page paths, `none` skips it entirely
+- feat: warn when synthetic Home.md overwrites an existing wiki Home page
 - docs: add MoinMoin Preparation section documenting surge protection
   requirement (`surge_action_limits = None`) before running conversion
 - docs: update Installation section to reference fork instead of PyPI

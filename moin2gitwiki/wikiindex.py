@@ -6,7 +6,6 @@ from enum import auto
 from enum import Enum
 from typing import NamedTuple
 from typing import Optional
-from typing import Tuple
 
 import attr
 
@@ -520,55 +519,6 @@ class MoinEditEntries:
 
     def count(self) -> int:
         return len(self.entries)
-
-    def create_home_page(self) -> Tuple[MoinEditEntry, str]:
-        """Builds a synthetic home page linking all current wiki pages."""
-        revision = MoinEditEntry(
-            edit_date=datetime.now(),
-            page_revision="1",
-            edit_type=MoinEditType.PAGE,
-            page_name="Home",
-            attachment="",
-            comment="Synthetic Home Page",
-            page_path="Home",
-            user=self.ctx.users.get_user_by_id_or_anonymous("0"),
-            ctx=self.ctx,
-        )
-
-        # collect current page paths from tree if available,
-        # otherwise derive from entries (fallback for no-tree context)
-        tree = getattr(self.ctx, "category_tree", None)
-        if tree is not None:
-            current_paths = sorted(set(
-                [node.resolved for node in tree.page_nodes.values() if node.resolved]
-                + [node.resolved for node in tree.category_nodes.values() if node.resolved]
-            ))
-        else:
-            seen = {}
-            for entry in self.entries:
-                name = entry.markdown_page_name()
-                if name:
-                    seen[entry.page_path] = name
-            current_paths = sorted(seen.values())
-
-        # build indented markdown list with synthesized parent folder entries
-        pages = {}
-        for page_path in current_paths:
-            page_split = page_path.split("/")
-            page_name = page_split.pop()
-            pages[page_path] = (len(page_split) * "  ") + f"- [{page_name}]({page_path})\n"
-            while len(page_split) > 0:
-                page_path = "/".join(page_split)
-                page_name = page_split.pop()
-                if page_path not in pages:
-                    pages[page_path] = (len(page_split) * "  ") + f"- {page_name}\n"
-
-        content = "# Home Page\n\n"
-        for item in sorted(pages.keys()):
-            content += pages[item]
-        content += "\n----\n"
-
-        return (revision, content)
 
     def get_new_link_target(self, link):
         if link in self.link_table:

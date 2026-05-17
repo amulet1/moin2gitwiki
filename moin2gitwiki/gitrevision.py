@@ -1,4 +1,5 @@
 import typing
+from datetime import datetime
 from typing import List, Optional
 
 import attr
@@ -29,7 +30,10 @@ class GitExportStream:
     last_commit_mark: int = attr.ib(default=None)
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
+    home_page: str = attr.ib(default="end")
     _category_tree: CategoryTree = attr.ib(default=None, init=False)
+    _home_exists: bool = attr.ib(default=False, init=False)
+    home_overwritten: bool = attr.ib(default=False, init=False)
 
     def __attrs_post_init__(self):
         self._category_tree = CategoryTree(logger=self.ctx.logger)
@@ -91,7 +95,61 @@ class GitExportStream:
         if not file_ops:
             return
 
+        # track if a real Home page exists in the wiki
+        if placement.page_name == "Home" and placement.parent_category is None:
+            self._home_exists = True
+
+        # in incremental mode, update Home.md as part of this commit
+        if self.home_page == "incremental" and revision.edit_type != MoinEditType.ATTACH:
+            home_content = self._generate_home_content().encode("utf-8")
+            home_blob = self.output_blob(home_content)
+            file_ops.append(f"M 100644 :{home_blob} Home.md\n")
+            if self._home_exists:
+                self.home_overwritten = True
+
         self._emit_commit(revision, description, file_ops)
+
+    def _generate_home_content(self) -> str:
+        """Generate Home page content from current tree state."""
+        tree = self._category_tree
+        current_paths = sorted(set(
+            [node.resolved for node in tree.page_nodes.values() if node.resolved]
+            + [node.resolved for node in tree.category_nodes.values() if node.resolved]
+        ))
+        pages = {}
+        for page_path in current_paths:
+            page_split = page_path.split("/")
+            page_name = page_split.pop()
+            pages[page_path] = (len(page_split) * "  ") + f"- [{page_name}]({page_path})\n"
+            while len(page_split) > 0:
+                page_path = "/".join(page_split)
+                page_name = page_split.pop()
+                if page_path not in pages:
+                    pages[page_path] = (len(page_split) * "  ") + f"- {page_name}\n"
+        content = "# Home Page\n\n"
+        for item in sorted(pages.keys()):
+            content += pages[item]
+        content += "\n----\n"
+        return content
+
+    def emit_home_page(self):
+        """Emit a commit adding or updating Home.md from current tree state."""
+        content = self._generate_home_content().encode("utf-8")
+        blob_ref = self.output_blob(content)
+        if self._home_exists:
+            self.home_overwritten = True
+        revision = MoinEditEntry(
+            edit_date=datetime.now(),
+            page_revision="1",
+            edit_type=MoinEditType.PAGE,
+            page_name="Home",
+            attachment="",
+            comment="Synthetic Home Page",
+            page_path="Home",
+            user=self.ctx.users.get_user_by_id_or_anonymous("0"),
+            ctx=self.ctx,
+        )
+        self._emit_commit(revision, "Update Home page", [f"M 100644 :{blob_ref} Home.md\n"])
 
     def _delete_side(
         self,

@@ -1,23 +1,23 @@
 # MoinMoin To Git (Markdown) Wiki Converter
 
-[![ci](https://img.shields.io/travis/com/nigelm/moin2gitwiki.svg)](https://travis-ci.com/nigelm/moin2gitwiki)
-[![documentation](https://img.shields.io/badge/docs-mkdocs%20material-blue.svg?style=flat)](https://nigelm.github.io/moin2gitwiki/)
-[![pypi version](https://img.shields.io/pypi/v/moin2gitwiki.svg)](https://pypi.python.org/pypi/moin2gitwiki)
+[![ci](https://img.shields.io/travis/com/amulet1/moin2gitwiki.svg)](https://travis-ci.com/amulet1/moin2gitwiki)
+[![documentation](https://img.shields.io/badge/docs-mkdocs%20material-blue.svg?style=flat)](https://amulet1.github.io/moin2gitwiki/)
 
 > **Fork notice:** This is a fork of the original moin2gitwiki by Nigel
-> Metheringham, aiming to extend support for additional target wiki platforms
-> and fix several issues discovered during real-world usage.
+> Metheringham, extended with support for additional target wiki platforms,
+> category-folder organisation, and various fixes from real-world usage.
 
 App to convert a MoinMoin wiki file tree into a git based wiki as used on
 github, gitlab or gitea.
 
 ## Current Version
 
-Version: `0.8.0`
+Version: `0.9.0-alpha`
 
 ## Status
 
-This was required for a one-off conversion. I'm not doing any further work on it - if anyone wishes to take this over then please just ask.
+Actively maintained fork. The original project appears to be abandoned.
+Contributions and bug reports are welcome via the GitHub repository.
 
 ## Translation Method
 
@@ -85,6 +85,36 @@ Attachment layout is determined by `--subpages-as-dirs`:
 
 - `True` (otterwiki default): `PageName/<attachment-dir>/file` — alongside the page
 - `False` (gollum default): `<attachment-dir>/PageName/file` — central folder
+
+## Category Folders
+
+The `--category-folders` option organises converted pages into subfolders
+based on their MoinMoin category membership. Off by default.
+
+When enabled, category pages become folder index pages and tagged pages are
+placed under their category's resolved path. Subcategory hierarchies are
+derived from the category pages' own content. The category tree is maintained
+incrementally across the full revision history, so moves and renames are
+reflected correctly in the git history.
+
+For example, a page tagged with `CategoryIT` would be placed at
+`<resolved-path-of-IT>/<page-name>.md`.
+
+The `Category` prefix is also stripped from category names in converted page
+content when this option is enabled.
+
+## Home Page
+
+The `--home-page` option controls generation of a synthetic `Home.md` page
+that lists all wiki pages:
+
+- `end` (default) — generate once at the end, reflecting the final wiki state
+- `incremental` — update `Home.md` as part of every commit that changes page
+  paths, so each point in history has an accurate home page
+- `none` — skip home page generation entirely
+
+A warning is emitted if the synthetic `Home.md` overwrites an existing wiki
+`Home` page. Use `--home-page=none` to preserve the original.
 
 ## MoinMoin Preparation
 
