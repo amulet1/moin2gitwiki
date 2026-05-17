@@ -529,7 +529,7 @@ class MoinEditEntries:
         return len(self.entries)
 
     def create_home_page(self) -> Tuple[MoinEditEntry, str]:
-        """Builds a synthetic home page to link all the wiki entries together"""
+        """Builds a synthetic home page linking all current wiki pages."""
         revision = MoinEditEntry(
             edit_date=datetime.now(),
             page_revision="1",
@@ -541,16 +541,29 @@ class MoinEditEntries:
             user=self.ctx.users.get_user_by_id_or_anonymous("0"),
             ctx=self.ctx,
         )
+
+        # collect current page paths from tree if available,
+        # otherwise derive from entries (fallback for no-tree context)
+        tree = getattr(self.ctx, "category_tree", None)
+        if tree is not None:
+            current_paths = sorted(set(
+                [node.resolved for node in tree.page_nodes.values() if node.resolved]
+                + [node.resolved for node in tree.category_nodes.values() if node.resolved]
+            ))
+        else:
+            seen = {}
+            for entry in self.entries:
+                name = entry.markdown_page_name()
+                if name:
+                    seen[entry.page_path] = name
+            current_paths = sorted(seen.values())
+
+        # build indented markdown list with synthesized parent folder entries
         pages = {}
-        for entry in self.entries:
-            page_path = entry.markdown_page_name()
-            if not page_path:
-                continue
+        for page_path in current_paths:
             page_split = page_path.split("/")
             page_name = page_split.pop()
-            pages[page_path] = (
-                len(page_split) * "  "
-            ) + f"- [{page_name}]({page_path})\n"
+            pages[page_path] = (len(page_split) * "  ") + f"- [{page_name}]({page_path})\n"
             while len(page_split) > 0:
                 page_path = "/".join(page_split)
                 page_name = page_split.pop()
