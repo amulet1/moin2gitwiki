@@ -249,10 +249,12 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         export = GitExportStream(output=gitstream.stdin, ctx=ctx)
         with click.progressbar(revisions.entries) as entries:
             for revision in entries:
-                content = translator.retrieve_and_translate(revision=revision)
+                lines = revision.wiki_content()
+                content = translator.retrieve_and_translate(revision=revision, lines=lines)
                 export.add_wiki_revision(
                     revision=revision,
                     content=content,
+                    lines=lines,
                 )
         if home_page:
             revision, content = revisions.create_home_page()

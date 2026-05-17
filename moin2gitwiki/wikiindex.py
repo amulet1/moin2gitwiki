@@ -201,7 +201,7 @@ class MoinEditEntry:
         """Unescape the page path"""
         return self.unescape(self.page_path)
 
-    def primary_category_ref(self, skip=None):
+    def primary_category_ref(self, lines, skip=None):
         """Return the first category membership ref from page content, or None.
 
         Only considers lines consisting entirely of category references —
@@ -211,10 +211,10 @@ class MoinEditEntry:
         The returned name has the Category prefix already stripped.
 
         Parameters:
-            skip: if set, skip refs whose root name matches this value,
-                  avoiding self-references on category pages.
+            lines:  Page content as list of strings from wiki_content().
+            skip:   If set, skip refs whose root name matches this value,
+                    avoiding self-references on category pages.
         """
-        lines = self.wiki_content()
         if not lines:
             return None
         for line in reversed(lines):
@@ -320,7 +320,7 @@ class MoinEditEntry:
             self.decode_moin_name(self.previous_page_name)
         )
 
-    def category_placement(self) -> CategoryPlacement:
+    def category_placement(self, lines=None) -> CategoryPlacement:
         """Classify this page for category tree placement.
 
         Three cases, determined by the decoded page name:
@@ -338,17 +338,19 @@ class MoinEditEntry:
 
         Returns a CategoryPlacement with fields populated as described above.
         All page_name values are sanitized and ready for path assembly.
+
+        Parameters:
+            lines:  Pre-loaded page content from wiki_content(), used to avoid
+                    re-reading the file when content is already available.
         """
         decoded = self.decode_moin_name(self.page_name)
         placement = self._classify_name_only(decoded)
 
         if placement.kind == "subpage":
-            # fully determined by name — return as-is
             return placement
 
         if placement.kind == "category":
-            # read parent and suffix from content, skipping self-references
-            ref = self.primary_category_ref(skip=placement.category_name)
+            ref = self.primary_category_ref(lines=lines, skip=placement.category_name)
             if ref:
                 parts = ref.split("/", 1)
                 parent_category = parts[0].strip()
@@ -365,7 +367,7 @@ class MoinEditEntry:
             )
 
         # 'page' — read parent category and suffix from content
-        ref = self.primary_category_ref()
+        ref = self.primary_category_ref(lines=lines)
         if ref:
             parts = ref.split("/", 1)
             parent_category = parts[0].strip()

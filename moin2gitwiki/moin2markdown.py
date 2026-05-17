@@ -105,19 +105,19 @@ class Moin2Markdown:
             ctx=ctx,
         )
 
-    def retrieve_and_translate(self, revision: MoinEditEntry) -> Optional[bytes]:
+    def retrieve_and_translate(self, revision: MoinEditEntry, lines=None) -> Optional[bytes]:
         """
         Retrieve a wiki revision, and translate it to markdown
 
         Parameters:
             revision:    The wiki revision object for the revision we want
+            lines:       Pre-loaded page content lines, or None if not available
 
         If the revision maps to an empty object - ie it deleted the page, or
         similar, then a None object is returned.
 
         """
         # check if this revision has any content...
-        lines = revision.wiki_content()
         if lines is None:
             return None
         else:
