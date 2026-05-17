@@ -201,45 +201,38 @@ class MoinEditEntry:
         """Unescape the page path"""
         return self.unescape(self.page_path)
 
-    def extract_category_refs(self):
-        """Extract all category references from page content.
+    def primary_category_ref(self, skip=None):
+        """Return the first category membership ref from page content, or None.
 
-        Finds both bracketed ([[CategoryXxx]], [[CategoryXxx|label]]) and
-        bare (CategoryXxx on its own line) category references.
-        Skips MoinMoin comment lines (starting with ##).
-        Returns list of category names with Category prefix stripped.
+        Only considers lines consisting entirely of category references —
+        matching how MoinMoin's editor places membership declarations.
+        Scans in reverse so the bottom of the page is checked first.
+
+        The returned name has the Category prefix already stripped.
+
+        Parameters:
+            skip: if set, skip refs whose root name matches this value,
+                  avoiding self-references on category pages.
         """
         lines = self.wiki_content()
         if not lines:
-            return []
-        refs = []
-        seen = set()
-        for line in lines:
-            # skip MoinMoin comment lines
+            return None
+        for line in reversed(lines):
             if line.startswith("##"):
+                continue
+            if not _CATEGORY_ONLY_LINE.match(line):
                 continue
             for m in _CATEGORY_BRACKETED.finditer(line):
                 name = m.group(1).strip()
-                if name not in seen:
-                    seen.add(name)
-                    refs.append(name)
-            # bare CategoryXxx only accepted on lines consisting entirely
-            # of category references — not in the middle of prose
-            if _CATEGORY_ONLY_LINE.match(line):
-                for m in _CATEGORY_BARE.finditer(line):
-                    name = m.group(1).strip()
-                    if name not in seen:
-                        seen.add(name)
-                        refs.append(name)
-        return refs
-
-    def primary_category_ref(self):
-        """Return the first category reference from page content, or None.
-
-        The returned name has the Category prefix already stripped.
-        """
-        refs = self.extract_category_refs()
-        return refs[0] if refs else None
+                if skip and name.split("/", 1)[0] == skip:
+                    continue
+                return name
+            for m in _CATEGORY_BARE.finditer(line):
+                name = m.group(1).strip()
+                if skip and name.split("/", 1)[0] == skip:
+                    continue
+                return name
+        return None
 
     def plain_placement(self) -> CategoryPlacement:
         """Classify this page for plain (non-category-folders) mode.
@@ -354,17 +347,15 @@ class MoinEditEntry:
             return placement
 
         if placement.kind == "category":
-            # read parent and suffix from content
-            parent_category = None
-            suffix = ""
-            for ref in self.extract_category_refs():
-                # skip self-references
-                if ref.split("/", 1)[0] == placement.category_name:
-                    continue
+            # read parent and suffix from content, skipping self-references
+            ref = self.primary_category_ref(skip=placement.category_name)
+            if ref:
                 parts = ref.split("/", 1)
                 parent_category = parts[0].strip()
                 suffix = parts[1].strip() if len(parts) > 1 else ""
-                break
+            else:
+                parent_category = None
+                suffix = ""
             return CategoryPlacement(
                 kind="category",
                 category_name=placement.category_name,
