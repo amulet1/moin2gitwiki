@@ -136,7 +136,8 @@ class GitExportStream:
             blob_ref = self.output_blob(content)
             # RENAME = delete old side + add new side
             prev_placement = revision.prev_category_placement()
-            file_ops.extend(self._delete_side(revision, prev_placement, tree))
+            if prev_placement.page_name or prev_placement.category_name:
+                file_ops.extend(self._delete_side(revision, prev_placement, tree))
             file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
             description = f"Rename to {placement.category_name or placement.page_name}"
 

@@ -241,21 +241,14 @@ class MoinEditEntry:
         refs = self.extract_category_refs()
         return refs[0] if refs else None
 
-    def prev_category_placement(self) -> CategoryPlacement:
-        """Classify the previous page name for RENAME delete-side handling.
+    def _classify_name_only(self, decoded: str) -> CategoryPlacement:
+        """Classify a decoded page name without reading content.
 
-        Name-only classification — content is never read for the old side
-        of a rename.  Returns a dummy 'page' placement with empty page_name
-        if there is no previous name.
+        Used by both prev_category_placement() (always name-only) and
+        category_placement() for the subpage case (also name-only).
+        For 'category' and 'page' kinds the parent/suffix fields are
+        left empty — callers that need them must read content separately.
         """
-        if not self.previous_page_name:
-            return CategoryPlacement(
-                kind="page", category_name=None,
-                parent_category=None, suffix="", page_name="",
-            )
-
-        decoded = self.decode_moin_name(self.previous_page_name)
-
         if decoded.startswith("Category"):
             stripped = decoded[len("Category"):].strip()
             if stripped:
@@ -278,13 +271,28 @@ class MoinEditEntry:
                         suffix="",
                         page_name=self.sanitize_for_path(remainder),
                     )
-
         return CategoryPlacement(
             kind="page",
             category_name=None,
             parent_category=None,
             suffix="",
             page_name=self.sanitize_for_path(decoded),
+        )
+
+    def prev_category_placement(self) -> CategoryPlacement:
+        """Classify the previous page name for RENAME delete-side handling.
+
+        Name-only classification — content is never read for the old side
+        of a rename.  Returns a dummy 'page' placement with empty page_name
+        if there is no previous name.
+        """
+        if not self.previous_page_name:
+            return CategoryPlacement(
+                kind="page", category_name=None,
+                parent_category=None, suffix="", page_name="",
+            )
+        return self._classify_name_only(
+            self.decode_moin_name(self.previous_page_name)
         )
 
     def category_placement(self) -> CategoryPlacement:
@@ -307,48 +315,33 @@ class MoinEditEntry:
         All page_name values are sanitized and ready for path assembly.
         """
         decoded = self.decode_moin_name(self.page_name)
+        placement = self._classify_name_only(decoded)
 
-        if decoded.startswith("Category"):
-            stripped = decoded[len("Category"):].strip()
-            if stripped:
-                if "/" not in stripped:
-                    # --- kind: 'category' ---
-                    # Read parent from content, same logic as build_category_map().
-                    parent_category = None
-                    suffix = ""
-                    for ref in self.extract_category_refs():
-                        # skip self-references
-                        if ref.split("/", 1)[0] == stripped:
-                            continue
-                        parts = ref.split("/", 1)
-                        parent_category = parts[0].strip()
-                        suffix = parts[1].strip() if len(parts) > 1 else ""
-                        break
-                    return CategoryPlacement(
-                        kind="category",
-                        category_name=stripped,
-                        parent_category=parent_category,
-                        suffix=suffix,
-                        page_name="",
-                    )
-                else:
-                    # --- kind: 'subpage' ---
-                    # e.g. "CategoryFoo/Bar/Baz" -> parent="Foo", page="Bar/Baz"
-                    slash = stripped.index("/")
-                    cat_name = stripped[:slash].strip()
-                    remainder = stripped[slash + 1:]
-                    page_name = self.sanitize_for_path(remainder)
-                    return CategoryPlacement(
-                        kind="subpage",
-                        category_name=None,
-                        parent_category=cat_name,
-                        suffix="",
-                        page_name=page_name,
-                    )
+        if placement.kind == "subpage":
+            # fully determined by name — return as-is
+            return placement
 
-        # --- kind: 'page' ---
-        # Reached for non-Category pages, and for bare "Category" page name.
-        page_name = self.sanitize_for_path(decoded)
+        if placement.kind == "category":
+            # read parent and suffix from content
+            parent_category = None
+            suffix = ""
+            for ref in self.extract_category_refs():
+                # skip self-references
+                if ref.split("/", 1)[0] == placement.category_name:
+                    continue
+                parts = ref.split("/", 1)
+                parent_category = parts[0].strip()
+                suffix = parts[1].strip() if len(parts) > 1 else ""
+                break
+            return CategoryPlacement(
+                kind="category",
+                category_name=placement.category_name,
+                parent_category=parent_category,
+                suffix=suffix,
+                page_name="",
+            )
+
+        # 'page' — read parent category and suffix from content
         ref = self.primary_category_ref()
         if ref:
             parts = ref.split("/", 1)
@@ -362,7 +355,7 @@ class MoinEditEntry:
             category_name=None,
             parent_category=parent_category,
             suffix=suffix,
-            page_name=page_name,
+            page_name=placement.page_name,
         )
 
     def markdown_transform(self, thing: str) -> str:
