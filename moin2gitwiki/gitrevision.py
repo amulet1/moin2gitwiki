@@ -155,7 +155,7 @@ class GitExportStream:
                 if revision.edit_type == MoinEditType.RENAME and revision.previous_page_name:
                     prev_decoded = revision.decode_moin_name(revision.previous_page_name)
                     if prev_decoded.startswith("Category"):
-                        old_cat_name = prev_decoded[len("Category"):]
+                        old_cat_name = prev_decoded[len("Category"):].strip()
                         # only root category pages have tree nodes
                         if "/" not in old_cat_name:
                             old_cat_resolved = tree.get_category_resolved(old_cat_name)
