@@ -29,12 +29,11 @@ class GitExportStream:
     last_commit_mark: int = attr.ib(default=None)
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
-    _category_tree: Optional[CategoryTree] = attr.ib(default=None, init=False)
+    _category_tree: CategoryTree = attr.ib(default=None, init=False)
 
     def __attrs_post_init__(self):
-        if getattr(self.ctx, "category_folders", False):
-            self._category_tree = CategoryTree(logger=self.ctx.logger)
-            self.ctx.category_tree = self._category_tree
+        self._category_tree = CategoryTree(logger=self.ctx.logger)
+        self.ctx.category_tree = self._category_tree
 
     def add_wiki_revision(
         self,
@@ -49,78 +48,19 @@ class GitExportStream:
             content:    The content of the wiki object, after translation, as bytes
 
         """
-        if self._category_tree is not None:
-            self._add_wiki_revision_categorized(revision, content)
+        category_folders = getattr(self.ctx, "category_folders", False)
+        if category_folders:
+            placement = revision.category_placement()
+            prev_placement = revision.prev_category_placement()
         else:
-            self._add_wiki_revision_plain(revision, content)
+            placement = revision.plain_placement()
+            prev_placement = revision.prev_plain_placement()
 
-    def _add_wiki_revision_plain(
-        self,
-        revision: MoinEditEntry,
-        content: bytes,
-    ):
-        """Revision handling without category tree — original behaviour."""
-        name = revision.markdown_page_path()
-        if content is not None:
-            blob_ref = self.output_blob(content)
-        elif revision.edit_type == MoinEditType.ATTACH:
-            blob_ref = self.output_blob(revision.attachment_content_bytes())
-        if self.last_commit_mark is None:
-            self.write_string(f"reset {self.branch}\n")
-        self.write_string(f"commit {self.branch}\n")
-        commit_ref = self.write_next_mark()
-        self.write_changer("author", revision)
-        self.write_changer("committer", revision)
-        if revision.comment != "":
-            self.output_data_string(f"{revision.comment}\n")
-        else:
-            if revision.edit_type == MoinEditType.PAGE:
-                self.output_data_string(f"Add/Update {name}\n")
-            elif revision.edit_type == MoinEditType.RENAME:
-                self.output_data_string(f"Rename to {name}\n")
-            elif revision.edit_type == MoinEditType.DELETE:
-                self.output_data_string(f"Delete {name}\n")
-            elif revision.edit_type == MoinEditType.ATTACH:
-                self.output_data_string(f"Attach {revision.attachment} to {name}\n")
-        # commit mark
-        if self.last_commit_mark is not None:
-            self.write_string(f"from :{self.last_commit_mark}\n")
-        # data change
-        if revision.edit_type == MoinEditType.PAGE:
-            self.write_string(f"M 100644 :{blob_ref} {name}\n\n")
-        elif revision.edit_type == MoinEditType.RENAME:
-            self.write_string(
-                f"D {revision.markdown_transform(revision.previous_page_name)}\n",
-            )
-            self.write_string(f"M 100644 :{blob_ref} {name}\n\n")
-        elif revision.edit_type == MoinEditType.DELETE:
-            self.write_string(f"D {name}\n\n")
-        elif revision.edit_type == MoinEditType.ATTACH:
-            self.write_string(
-                f"M 100644 :{blob_ref} {revision.attachment_destination()}\n\n",
-            )
-        self.last_commit_mark = commit_ref
-        self.ctx.logger.debug(f"Written commit {commit_ref}")
-
-    def _add_wiki_revision_categorized(
-        self,
-        revision: MoinEditEntry,
-        content: bytes,
-    ):
-        """Revision handling using CategoryTree for path resolution.
-
-        Computes file paths incrementally from the category tree rather than
-        from the static pre-built category map.  A single commit may contain
-        multiple file operations when a category change cascades to child pages
-        or categories.
-        """
         tree = self._category_tree
-        placement = revision.category_placement()
         file_ops: List[str] = []
         description: Optional[str] = None
 
         if revision.edit_type == MoinEditType.ATTACH:
-            # Attachments are not affected by category placement
             blob_ref = self.output_blob(revision.attachment_content_bytes())
             dest = revision.attachment_destination()
             file_ops.append(f"M 100644 :{blob_ref} {dest}\n")
@@ -134,8 +74,6 @@ class GitExportStream:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            # RENAME = delete old side + add new side
-            prev_placement = revision.prev_category_placement()
             if prev_placement.page_name or prev_placement.category_name:
                 file_ops.extend(self._delete_side(revision, prev_placement, tree))
             file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))

@@ -241,6 +241,38 @@ class MoinEditEntry:
         refs = self.extract_category_refs()
         return refs[0] if refs else None
 
+    def plain_placement(self) -> CategoryPlacement:
+        """Classify this page for plain (non-category-folders) mode.
+
+        No content reading — page_name is derived from the page name alone
+        using markdown_transform().  Kind is always 'page', parent always None.
+        """
+        return CategoryPlacement(
+            kind="page",
+            category_name=None,
+            parent_category=None,
+            suffix="",
+            page_name=self.markdown_transform(self.page_name),
+        )
+
+    def prev_plain_placement(self) -> CategoryPlacement:
+        """Classify the previous page name for plain mode RENAME delete-side.
+
+        Returns a dummy placement with empty page_name if there is no previous name.
+        """
+        if not self.previous_page_name:
+            return CategoryPlacement(
+                kind="page", category_name=None,
+                parent_category=None, suffix="", page_name="",
+            )
+        return CategoryPlacement(
+            kind="page",
+            category_name=None,
+            parent_category=None,
+            suffix="",
+            page_name=self.markdown_transform(self.previous_page_name),
+        )
+
     def _classify_name_only(self, decoded: str) -> CategoryPlacement:
         """Classify a decoded page name without reading content.
 
@@ -381,22 +413,19 @@ class MoinEditEntry:
 
     def resolved_page_name(self) -> str:
         """Return the current resolved page name from the category tree if available,
-        falling back to markdown_transform() when category_folders is off or the
-        page is not yet tracked.
+        falling back to markdown_transform() if the page is not yet tracked
+        (e.g. during translation before the revision has been committed to the tree).
         """
         tree = getattr(self.ctx, "category_tree", None)
         if tree is not None:
-            # try page node first
             resolved = tree.get_page_resolved(self.page_path)
             if resolved is not None:
                 return resolved
-            # try category node
             placement = self._classify_name_only(self.decode_moin_name(self.page_name))
             if placement.kind == "category":
                 resolved = tree.get_category_resolved(placement.category_name)
                 if resolved is not None:
                     return resolved
-        # fallback — plain transform without category resolution
         return self.markdown_transform(self.page_name)
 
 
