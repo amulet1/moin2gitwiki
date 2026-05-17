@@ -136,7 +136,7 @@ class MoinEditEntry:
             raise ValueError("No attachment path set")
         subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
         attachment_dir = getattr(self.ctx, "attachment_dir", "_attachments")
-        decoded_page = self.markdown_transform(self.page_path).replace(".md", "")
+        decoded_page = self.resolved_page_name()
         if subpages_as_dirs:
             return os.path.join(decoded_page, attachment_dir, self.attachment)
         else:
@@ -373,34 +373,31 @@ class MoinEditEntry:
 
     def markdown_page_path(self):
         """Page path translated, with .md suffix"""
-        return self.markdown_transform(self.page_name) + ".md"
+        return self.markdown_page_name() + ".md"
 
     def markdown_page_name(self):
-        """Page name translated"""
-        return self.markdown_transform(self.page_name)
+        """Page name translated, using category-resolved path when available"""
+        return self.resolved_page_name()
 
-    def resolved_page_name(self) -> Optional[str]:
+    def resolved_page_name(self) -> str:
         """Return the current resolved page name from the category tree if available,
-        falling back to markdown_page_name() when category_folders is off or the
+        falling back to markdown_transform() when category_folders is off or the
         page is not yet tracked.
-
-        Used by create_home_page() to generate correct links regardless of mode.
         """
         tree = getattr(self.ctx, "category_tree", None)
-        if tree is None:
-            return self.markdown_page_name()
-        # try page node first
-        resolved = tree.get_page_resolved(self.page_path)
-        if resolved is not None:
-            return resolved
-        # try category node
-        placement = self._classify_name_only(self.decode_moin_name(self.page_name))
-        if placement.kind == "category":
-            resolved = tree.get_category_resolved(placement.category_name)
+        if tree is not None:
+            # try page node first
+            resolved = tree.get_page_resolved(self.page_path)
             if resolved is not None:
                 return resolved
-        # fallback
-        return self.markdown_page_name()
+            # try category node
+            placement = self._classify_name_only(self.decode_moin_name(self.page_name))
+            if placement.kind == "category":
+                resolved = tree.get_category_resolved(placement.category_name)
+                if resolved is not None:
+                    return resolved
+        # fallback — plain transform without category resolution
+        return self.markdown_transform(self.page_name)
 
 
 @attr.s(kw_only=True, frozen=True, slots=True)
@@ -517,7 +514,7 @@ class MoinEditEntries:
         )
         pages = {}
         for entry in self.entries:
-            page_path = entry.resolved_page_name()
+            page_path = entry.markdown_page_name()
             if not page_path:
                 continue
             page_split = page_path.split("/")
