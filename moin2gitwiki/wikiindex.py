@@ -379,6 +379,29 @@ class MoinEditEntry:
         """Page name translated"""
         return self.markdown_transform(self.page_name)
 
+    def resolved_page_name(self) -> Optional[str]:
+        """Return the current resolved page name from the category tree if available,
+        falling back to markdown_page_name() when category_folders is off or the
+        page is not yet tracked.
+
+        Used by create_home_page() to generate correct links regardless of mode.
+        """
+        tree = getattr(self.ctx, "category_tree", None)
+        if tree is None:
+            return self.markdown_page_name()
+        # try page node first
+        resolved = tree.get_page_resolved(self.page_path)
+        if resolved is not None:
+            return resolved
+        # try category node
+        placement = self._classify_name_only(self.decode_moin_name(self.page_name))
+        if placement.kind == "category":
+            resolved = tree.get_category_resolved(placement.category_name)
+            if resolved is not None:
+                return resolved
+        # fallback
+        return self.markdown_page_name()
+
 
 @attr.s(kw_only=True, frozen=True, slots=True)
 class MoinEditEntries:
@@ -494,7 +517,9 @@ class MoinEditEntries:
         )
         pages = {}
         for entry in self.entries:
-            page_path = entry.markdown_page_name()
+            page_path = entry.resolved_page_name()
+            if not page_path:
+                continue
             page_split = page_path.split("/")
             page_name = page_split.pop()
             pages[page_path] = (
