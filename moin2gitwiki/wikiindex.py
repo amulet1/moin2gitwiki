@@ -264,61 +264,60 @@ class MoinEditEntry:
 
         if decoded.startswith("Category"):
             stripped = decoded[len("Category"):].strip()
-            slash = stripped.find("/")
+            if stripped:
+                if "/" not in stripped:
+                    # --- kind: 'category' ---
+                    # Read parent from content, same logic as build_category_map().
+                    parent_category = None
+                    suffix = ""
+                    for ref in self.extract_category_refs():
+                        # skip self-references
+                        if ref.split("/", 1)[0] == stripped:
+                            continue
+                        parts = ref.split("/", 1)
+                        parent_category = parts[0].strip()
+                        suffix = parts[1].strip() if len(parts) > 1 else ""
+                        break
+                    return CategoryPlacement(
+                        kind="category",
+                        category_name=stripped,
+                        parent_category=parent_category,
+                        suffix=suffix,
+                        page_name="",
+                    )
+                else:
+                    # --- kind: 'subpage' ---
+                    # e.g. "CategoryFoo/Bar/Baz" -> parent="Foo", page="Bar/Baz"
+                    slash = stripped.index("/")
+                    cat_name = stripped[:slash].strip()
+                    remainder = stripped[slash + 1:]
+                    page_name = self.sanitize_for_path(remainder)
+                    return CategoryPlacement(
+                        kind="subpage",
+                        category_name=None,
+                        parent_category=cat_name,
+                        suffix="",
+                        page_name=page_name,
+                    )
 
-            if slash == -1:
-                # --- kind: 'category' ---
-                # Read parent from content, same logic as build_category_map().
-                parent_category = None
-                suffix = ""
-                for ref in self.extract_category_refs():
-                    # skip self-references
-                    if ref.split("/", 1)[0] == stripped:
-                        continue
-                    parts = ref.split("/", 1)
-                    parent_category = parts[0].strip()
-                    suffix = parts[1].strip() if len(parts) > 1 else ""
-                    break
-                return CategoryPlacement(
-                    kind="category",
-                    category_name=stripped,
-                    parent_category=parent_category,
-                    suffix=suffix,
-                    page_name="",
-                )
-
-            else:
-                # --- kind: 'subpage' ---
-                # e.g. "CategoryFoo/Bar/Baz" -> parent="Foo", page="Bar/Baz"
-                cat_name = stripped[:slash]
-                remainder = stripped[slash + 1:]
-                page_name = self.sanitize_for_path(remainder)
-                return CategoryPlacement(
-                    kind="subpage",
-                    category_name=None,
-                    parent_category=cat_name,
-                    suffix="",
-                    page_name=page_name,
-                )
-
+        # --- kind: 'page' ---
+        # Reached for non-Category pages, and for bare "Category" page name.
+        page_name = self.sanitize_for_path(decoded)
+        ref = self.primary_category_ref()
+        if ref:
+            parts = ref.split("/", 1)
+            parent_category = parts[0].strip()
+            suffix = parts[1].strip() if len(parts) > 1 else ""
         else:
-            # --- kind: 'page' ---
-            page_name = self.sanitize_for_path(decoded)
-            ref = self.primary_category_ref()
-            if ref:
-                parts = ref.split("/", 1)
-                parent_category = parts[0].strip()
-                suffix = parts[1].strip() if len(parts) > 1 else ""
-            else:
-                parent_category = None
-                suffix = ""
-            return CategoryPlacement(
-                kind="page",
-                category_name=None,
-                parent_category=parent_category,
-                suffix=suffix,
-                page_name=page_name,
-            )
+            parent_category = None
+            suffix = ""
+        return CategoryPlacement(
+            kind="page",
+            category_name=None,
+            parent_category=parent_category,
+            suffix=suffix,
+            page_name=page_name,
+        )
 
     def markdown_transform(self, thing: str) -> str:
         """Decode MoinMoin name and convert to a page path.
