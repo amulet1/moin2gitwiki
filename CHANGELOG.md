@@ -35,10 +35,32 @@ Unreleased Changes
 - feat: add `--log-file` option to control log file path (default:
   `moin2gitwiki.log` in current directory, also via `MOIN2GIT_LOG_FILE`)
 - feat: add `--category-folders` option — uses MoinMoin category tags to
-  organize converted pages into subfolders via two-pass category map
-  resolution. Off by default for backward compatibility.
+  organize converted pages into subfolders using an incremental category
+  tree that tracks hierarchy changes across the full revision history.
+  Category pages, category subpages, and regular tagged pages are each
+  classified and placed correctly. Cascade renames are emitted when a
+  category hierarchy changes. Off by default for backward compatibility.
 - feat: strip `Category` prefix from known category names in converted
   content when `--category-folders` is enabled
+- feat: add `CategoryTree` with `CategoryNode` and `PageNode` — incremental
+  category-to-path resolution updated per revision as wiki history is
+  replayed, replacing the former static two-pass `build_category_map()`
+  approach
+- feat: add `CategoryPlacement` and `category_placement()` / `prev_category_placement()`
+  to `MoinEditEntry` — classifies each page as `'category'`, `'subpage'`,
+  or `'page'` for routing into the category tree
+- fix: RENAME now handled as delete-old + add-new, correctly covering all
+  combinations: page↔page, page↔category, category↔category,
+  page↔subpage
+- fix: category page renames clean up the old category node from the tree
+  before creating the new one, cascading child pages to bare-name paths
+- fix: falsy empty-string resolved paths no longer silently skip `D`
+  commands — all `old_resolved` checks use `is not None`
+- fix: bare `"Category"` page name (empty stripped name) treated as a
+  regular page, preventing a spurious `.md` file in the output
+- fix: leading/trailing spaces stripped from all path components in
+  `sanitize_for_path()`, and from category names and suffixes parsed
+  from page content
 - docs: add MoinMoin Preparation section documenting surge protection
   requirement (`surge_action_limits = None`) before running conversion
 - docs: update Installation section to reference fork instead of PyPI

@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "moin2gitwiki"
-version = "0.8.0"
+version = "0.9.0-alpha"
 description = "MoinMoin To Git (Markdown) Wiki Converter"
 authors = ["Nigel Metheringham <nigelm@cpan.org>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/nigelm/moin2gitwiki"
-repository = "https://github.com/nigelm/moin2gitwiki"
-documentation = "https://nigelm.github.io/moin2gitwiki/"
+homepage = "https://github.com/amulet1/moin2gitwiki"
+repository = "https://github.com/amulet1/moin2gitwiki"
+documentation = "https://github.com/amulet1/moin2gitwiki"
 include = [
     "CHANGELOG.md",
     "README.md",

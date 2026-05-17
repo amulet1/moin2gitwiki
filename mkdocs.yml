@@ -1,7 +1,7 @@
 site_name: moin2gitwiki
 site_description: "Convert MoinMoin filesystem into github/gitlab/gitea type git based wiki"
-site_url: "https://nigelm.github.io/moin2gitwiki/"
-repo_url: "https://github.com/nigelm/moin2gitwiki"
+site_url: "https://amulet1.github.io/moin2gitwiki/"
+repo_url: "https://github.com/amulet1/moin2gitwiki"
 repo_name: "moin2gitwiki"
 
 nav:
@@ -9,6 +9,7 @@ nav:
   - Commands: commands.md
   - Changelog: changelog.md
   - Internal:
+    - Category Tree:      internal/categorytree.md
     - CLI:                internal/cli.md
     - Context:            internal/context.md
     - Fetch Cache:        internal/fetch_cache.md

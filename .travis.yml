@@ -41,7 +41,7 @@ deploy:
 after_deploy:
   - git config user.name "Travis Docs Builder"
   - git config user.email "travis@example.org"
-  - git remote add gh-token "https://${GH_TOKEN}@github.com/nigelm/moin2gitwiki.git";
+  - git remote add gh-token "https://${GH_TOKEN}@github.com/amulet1/moin2gitwiki.git";
   - git fetch gh-token && git fetch gh-token gh-pages:gh-pages;
   - poetry run mkdocs gh-deploy -v --clean --remote-name gh-token;
 
