@@ -174,13 +174,15 @@ class MoinEditEntry:
         parts = thing.split("/")
         sanitized = []
         for part in parts:
+            part = part.strip()
             for char, replacement in unsafe_chars.items():
                 part = part.replace(char, replacement)
             if spaces_to_hyphens:
                 part = part.replace(" ", "-")
             if strip_dots:
                 part = part.replace(".", "")
-            sanitized.append(part)
+            if part:  # skip empty components that may result from stripping
+                sanitized.append(part)
         return "/".join(sanitized)
 
     def unescape(self, thing: str) -> str:
@@ -261,7 +263,7 @@ class MoinEditEntry:
         decoded = self.decode_moin_name(self.page_name)
 
         if decoded.startswith("Category"):
-            stripped = decoded[len("Category"):]
+            stripped = decoded[len("Category"):].strip()
             slash = stripped.find("/")
 
             if slash == -1:
@@ -274,8 +276,8 @@ class MoinEditEntry:
                     if ref.split("/", 1)[0] == stripped:
                         continue
                     parts = ref.split("/", 1)
-                    parent_category = parts[0]
-                    suffix = parts[1] if len(parts) > 1 else ""
+                    parent_category = parts[0].strip()
+                    suffix = parts[1].strip() if len(parts) > 1 else ""
                     break
                 return CategoryPlacement(
                     kind="category",
@@ -305,8 +307,8 @@ class MoinEditEntry:
             ref = self.primary_category_ref()
             if ref:
                 parts = ref.split("/", 1)
-                parent_category = parts[0]
-                suffix = parts[1] if len(parts) > 1 else ""
+                parent_category = parts[0].strip()
+                suffix = parts[1].strip() if len(parts) > 1 else ""
             else:
                 parent_category = None
                 suffix = ""
