@@ -122,43 +122,24 @@ class CategoryTree:
     # Path computation (stateless helpers)
     # ------------------------------------------------------------------
 
-    def _compute_category_resolved(self, name: str) -> str:
-        """Recursively compute the full folder path for a category.
+    def _compute_resolved(self, node: Node) -> str:
+        """Compute the full path for a node using its parent pointer.
 
-        Walks up the parent chain using live node data, so always reflects
-        the current tree state.  Does not use cached .resolved values —
-        those are set by _recompute_category after this is called.
+        Uses parent.resolved (cached) as the prefix. This is safe because
+        cascade is always top-down — a parent's resolved is always current
+        by the time we compute a child's resolved.
+
+        Placeholder nodes (created before their page is processed) have
+        resolved set to their bare name, which is correct for root-level
+        nodes and will be updated when their page is eventually processed.
         """
-        node = self.category_nodes.get(name)
-        if node is None:
-            # unknown / placeholder — use bare name
-            return name
         parts = []
-        if node.parent_category:
-            parent_resolved = self._compute_category_resolved(node.parent_category)
-            if parent_resolved:
-                parts.append(parent_resolved)
+        if node.parent is not None and node.parent.resolved:
+            parts.append(node.parent.resolved)
         if node.suffix:
             parts.append(node.suffix)
-        parts.append(node.name)
-        return "/".join(parts)
-
-    def _compute_page_resolved(self, page: Node) -> str:
-        """Compute the full path for a page (no file extension).
-
-        Uses the cached .resolved on the parent CategoryNode, which is
-        always up to date because category cascade runs before page cascade.
-        """
-        parts = []
-        if page.parent_category:
-            cat = self.category_nodes.get(page.parent_category)
-            parent_resolved = cat.resolved if cat else page.parent_category
-            if parent_resolved:
-                parts.append(parent_resolved)
-        if page.suffix:
-            parts.append(page.suffix)
-        if page.name:
-            parts.append(page.name)
+        if node.name:
+            parts.append(node.name)
         return "/".join(parts)
 
     # ------------------------------------------------------------------
@@ -207,7 +188,7 @@ class CategoryTree:
         if node is None:
             return []
 
-        new_resolved = self._compute_category_resolved(name)
+        new_resolved = self._compute_resolved(node)
         if new_resolved == node.resolved:
             return []  # nothing changed — prune cascade early
 
@@ -238,7 +219,7 @@ class CategoryTree:
     def _recompute_page(self, page: Node) -> list[tuple[str, str, Optional[int]]]:
         """Recompute .resolved for a page. Returns [(old, new, blob_mark)] if path changed."""
         old_resolved = page.resolved
-        candidate = self._compute_page_resolved(page)
+        candidate = self._compute_resolved(page)
         new_resolved = self._unique_path(candidate, page.page_path)
 
         if new_resolved == old_resolved:
@@ -440,7 +421,7 @@ class CategoryTree:
         page.suffix = suffix
         page.blob_mark = blob_mark
 
-        candidate = self._compute_page_resolved(page)
+        candidate = self._compute_resolved(page)
         new_resolved = self._unique_path(candidate, page_path)
 
         if old_resolved and old_resolved != new_resolved:
