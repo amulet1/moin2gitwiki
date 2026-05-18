@@ -38,25 +38,32 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 
 @dataclass
-class CategoryNode:
-    """One category in the hierarchy.
+class Node:
+    """One page or category in the wiki tree.
+
+    Represents both regular pages (is_category=False) and category pages
+    (is_category=True). Category nodes are keyed by stripped name in
+    category_nodes; page nodes are keyed by page_path in page_nodes.
 
     Attributes:
-        name:             Stripped category name e.g. "Foo" (from CategoryFoo)
-        parent_category:  Stripped name of the parent category, or None
-        suffix:           Path components between parent resolved path and this
-                          node's name; comes from the /... part of the parent
-                          ref in this category's page content.
-                          e.g. "Sub" from [[CategoryFoo/Sub]]
-        resolved:         Cached full folder path e.g. "Bar/Baz/Foo".
+        is_category:      True if this is a CategoryFoo page.
+        name:             Stripped category name for categories (e.g. "Foo"),
+                          or sanitized page name for pages (e.g. "EMail/Setup").
+        page_path:        MoinMoin filesystem page_path — stable unique key
+                          for pages. None for category nodes.
+        parent_category:  Stripped name of the parent category, or None.
+        suffix:           Path components from the category ref after /,
+                          e.g. "Sub" from [[CategoryFoo/Sub]].
+        resolved:         Cached full path (no file extension).
                           Always kept up to date; recomputed on any ancestor change.
-        child_categories: Stripped names of direct child categories
-                          (categories that declared this one as their parent).
-        child_pages:      page_path keys of pages tagged with this category.
-        blob_mark:        Latest content mark for the category page itself —
-                          needed to re-emit the file when the category moves.
+        child_categories: Stripped names of direct child category nodes.
+        child_pages:      page_path keys of direct child page nodes.
+        blob_mark:        Latest content mark — needed to re-emit the file
+                          when the node moves due to a cascade.
     """
+    is_category: bool
     name: str
+    page_path: Optional[str] = None
     parent_category: Optional[str] = None
     suffix: str = ""
     resolved: str = ""
@@ -65,28 +72,9 @@ class CategoryNode:
     blob_mark: Optional[int] = None
 
 
-@dataclass
-class PageNode:
-    """One wiki page in the tree.
-
-    Attributes:
-        page_path:        MoinMoin filesystem page_path — unique stable key.
-        page_name:        Sanitized leaf name (may contain / for subpages).
-                          Changes only on MoinMoin page rename.
-        parent_category:  Stripped name of the category this page belongs to,
-                          or None if the page has no category tag.
-        suffix:           Path components from the category ref after /,
-                          e.g. "Sub" from CategoryFoo/Sub.
-                          Changes when the category ref in page content changes.
-        resolved:         Cached full path (no file extension).
-        blob_mark:        Latest content mark — set by caller after writing content.
-    """
-    page_path: str
-    page_name: str
-    parent_category: Optional[str] = None
-    suffix: str = ""
-    resolved: str = ""
-    blob_mark: Optional[int] = None
+# Keep type aliases for clarity at call sites
+CategoryNode = Node
+PageNode = Node
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +108,8 @@ class CategoryTree:
     """
 
     def __init__(self, logger: logging.Logger):
-        self.category_nodes: dict[str, CategoryNode] = {}
-        self.page_nodes: dict[str, PageNode] = {}
+        self.category_nodes: dict[str, Node] = {}
+        self.page_nodes: dict[str, Node] = {}
         # reverse map: resolved_path -> page_path, for collision detection
         self._path_registry: dict[str, str] = {}
         self.logger = logger
@@ -151,7 +139,7 @@ class CategoryTree:
         parts.append(node.name)
         return "/".join(parts)
 
-    def _compute_page_resolved(self, page: PageNode) -> str:
+    def _compute_page_resolved(self, page: Node) -> str:
         """Compute the full path for a page (no file extension).
 
         Uses the cached .resolved on the parent CategoryNode, which is
@@ -165,8 +153,8 @@ class CategoryTree:
                 parts.append(parent_resolved)
         if page.suffix:
             parts.append(page.suffix)
-        if page.page_name:
-            parts.append(page.page_name)
+        if page.name:
+            parts.append(page.name)
         return "/".join(parts)
 
     # ------------------------------------------------------------------
@@ -246,7 +234,7 @@ class CategoryTree:
 
         return renames
 
-    def _recompute_page(self, page: PageNode) -> list[tuple[str, str, Optional[int]]]:
+    def _recompute_page(self, page: Node) -> list[tuple[str, str, Optional[int]]]:
         """Recompute .resolved for a page. Returns [(old, new, blob_mark)] if path changed."""
         old_resolved = page.resolved
         candidate = self._compute_page_resolved(page)
@@ -264,37 +252,39 @@ class CategoryTree:
         )
         return [(old_resolved, new_resolved, page.blob_mark)]
 
-    def _detach_page_from_category(self, page: PageNode):
+    def _detach_page_from_category(self, page: Node):
         """Remove page from its current parent category's child_pages set."""
         if page.parent_category and page.parent_category in self.category_nodes:
             self.category_nodes[page.parent_category].child_pages.discard(
                 page.page_path
             )
 
-    def _attach_page_to_category(self, page: PageNode):
+    def _attach_page_to_category(self, page: Node):
         """Add page to its new parent category's child_pages set."""
         if page.parent_category:
             if page.parent_category not in self.category_nodes:
                 # create a placeholder node — will be properly populated when
                 # that category page is processed
-                self.category_nodes[page.parent_category] = CategoryNode(
+                self.category_nodes[page.parent_category] = Node(
+                    is_category=True,
                     name=page.parent_category,
                     resolved=page.parent_category,
                 )
             self.category_nodes[page.parent_category].child_pages.add(page.page_path)
 
-    def _detach_category_from_parent(self, node: CategoryNode):
+    def _detach_category_from_parent(self, node: Node):
         """Remove category from its current parent's child_categories set."""
         if node.parent_category and node.parent_category in self.category_nodes:
             self.category_nodes[node.parent_category].child_categories.discard(
                 node.name
             )
 
-    def _attach_category_to_parent(self, node: CategoryNode):
+    def _attach_category_to_parent(self, node: Node):
         """Add category to its new parent's child_categories set."""
         if node.parent_category:
             if node.parent_category not in self.category_nodes:
-                self.category_nodes[node.parent_category] = CategoryNode(
+                self.category_nodes[node.parent_category] = Node(
+                    is_category=True,
                     name=node.parent_category,
                     resolved=node.parent_category,
                 )
@@ -328,7 +318,7 @@ class CategoryTree:
 
         if node is None:
             # brand-new category
-            node = CategoryNode(name=name, resolved=name)
+            node = Node(is_category=True, name=name, resolved=name)
             self.category_nodes[name] = node
 
         changed = (
@@ -437,7 +427,7 @@ class CategoryTree:
         page = self.page_nodes.get(page_path)
 
         if page is None:
-            page = PageNode(page_path=page_path, page_name=page_name)
+            page = Node(is_category=False, name=page_name, page_path=page_path)
             self.page_nodes[page_path] = page
 
         old_resolved = page.resolved or None
@@ -450,7 +440,7 @@ class CategoryTree:
         else:
             page.parent_category = parent_category
 
-        page.page_name = page_name
+        page.name = page_name
         page.suffix = suffix
         page.blob_mark = blob_mark
 
@@ -502,6 +492,6 @@ class CategoryTree:
         """
         node = self.category_nodes.get(name)
         if node is None:
-            node = CategoryNode(name=name, resolved=name)
+            node = Node(is_category=True, name=name, resolved=name)
             self.category_nodes[name] = node
         node.blob_mark = blob_mark
