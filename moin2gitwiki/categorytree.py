@@ -25,7 +25,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import NamedTuple, Optional
+
+
+# ---------------------------------------------------------------------------
+# Node key
+# ---------------------------------------------------------------------------
+
+class NodeKey(NamedTuple):
+    """Composite key for the nodes dict — distinguishes categories from pages
+    that share the same name or page_path string.
+    """
+    is_category: bool
+    key: str
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +50,7 @@ class Node:
 
     Represents both regular pages (is_category=False) and category pages
     (is_category=True). Category nodes are keyed by stripped name in
-    category_nodes; page nodes are keyed by page_path in page_nodes.
+    nodes dict keyed by NodeKey(is_category, key).
 
     Attributes:
         is_category:      True if this is a CategoryFoo page.
@@ -105,8 +117,9 @@ class CategoryTree:
     """
 
     def __init__(self, logger: logging.Logger):
-        self.category_nodes: dict[str, Node] = {}
-        self.page_nodes: dict[str, Node] = {}
+        # NodeKey(is_category, key) -> Node; key is stripped name for categories,
+        # page_path for pages
+        self.nodes: dict[NodeKey, Node] = {}
         # reverse map: resolved_path -> page_path, for collision detection
         self._path_registry: dict[str, str] = {}
         self.logger = logger
@@ -221,13 +234,13 @@ class CategoryTree:
 
     def _get_or_create_category_node(self, name: str) -> Node:
         """Return the category node for name, creating a placeholder if needed."""
-        if name not in self.category_nodes:
-            self.category_nodes[name] = Node(
+        if NodeKey(True, name) not in self.nodes:
+            self.nodes[NodeKey(True, name)] = Node(
                 is_category=True,
                 name=name,
                 resolved=name,
             )
-        return self.category_nodes[name]
+        return self.nodes[NodeKey(True, name)]
 
     def _detach_from_parent(self, node: Node):
         """Remove node from its parent's children and clear parent pointer."""
@@ -271,8 +284,7 @@ class CategoryTree:
             is None if the node did not move, and cascade_renames lists
             (old, new, blob_mark) triples for children that moved.
         """
-        nodes_dict = self.category_nodes if is_category else self.page_nodes
-        node = nodes_dict.get(key)
+        node = self.nodes.get(NodeKey(is_category, key))
 
         if node is None:
             node = Node(
@@ -280,7 +292,7 @@ class CategoryTree:
                 name=name,
                 page_path=None if is_category else key,
             )
-            nodes_dict[key] = node
+            self.nodes[NodeKey(is_category, key)] = node
 
         # always update blob_mark — needed for future cascade re-emissions
         node.blob_mark = blob_mark
@@ -324,7 +336,7 @@ class CategoryTree:
         Returns list of (old_resolved, new_resolved, blob_mark) for affected pages
         and child categories.
         """
-        node = self.category_nodes.get(name)
+        node = self.nodes.get(NodeKey(True, name))
         if node is None:
             return []
 
@@ -338,7 +350,7 @@ class CategoryTree:
         for child in children:
             child.parent = None
 
-        del self.category_nodes[name]
+        del self.nodes[NodeKey(True, name)]
 
         # recompute everything that was under this node
         renames: list[tuple[str, str, Optional[int]]] = []
@@ -363,22 +375,22 @@ class CategoryTree:
 
         Returns the page's last resolved path, or None if the page was not tracked.
         """
-        page = self.page_nodes.get(page_path)
+        page = self.nodes.get(NodeKey(False, page_path))
         if page is None:
             return None
 
         self._detach_from_parent(page)
         self._unregister(page.resolved, page_path)
-        del self.page_nodes[page_path]
+        del self.nodes[NodeKey(False, page_path)]
 
         return page.resolved or None
 
     def get_page_resolved(self, page_path: str) -> Optional[str]:
         """Return the current resolved path for a page, or None if not tracked."""
-        page = self.page_nodes.get(page_path)
+        page = self.nodes.get(NodeKey(False, page_path))
         return page.resolved if page else None
 
     def get_category_resolved(self, name: str) -> Optional[str]:
         """Return the current resolved path for a category, or None if unknown."""
-        node = self.category_nodes.get(name)
+        node = self.nodes.get(NodeKey(True, name))
         return node.resolved if node else None
