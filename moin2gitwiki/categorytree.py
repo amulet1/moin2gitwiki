@@ -13,12 +13,12 @@ Resolved path is always:
 with empty components omitted. The parent pointer is a direct Node
 reference set by attach/detach helpers. Parent category is passed by
 name to update_category/update_page (external API) and converted to
-a node reference internally.
+a node reference internally via _get_or_create_category_node.
 
 Callers are responsible for:
   - sanitizing page_name before passing it in
   - applying any output-format suffix (e.g. file extension) to resolved paths
-  - acting on the (old_path, new_path) pairs returned by update/delete methods
+  - acting on the (old_path, new_path, blob_mark) triples returned by update/delete methods
 """
 
 from __future__ import annotations
@@ -68,8 +68,8 @@ class Node:
         blob_mark:        Latest content mark — needed to re-emit the file
                           when the node moves due to a cascade.
         parent:           Direct reference to the parent Node, or None if root.
-                          Set and cleared by attach/detach helpers alongside
-                          Maintained alongside suffix by attach/detach helpers.
+                          Set and cleared by _attach_to_parent and
+                          _detach_from_parent helpers.
     """
     is_category: bool
     name: str
@@ -95,18 +95,13 @@ class CategoryTree:
 
     Caller processes revisions in chronological order and calls:
 
-        update_category(name, parent_category, suffix)
-            -- when a category page is saved/updated.
-            Returns list of (old_resolved, new_resolved) for cascade moves.
+        update_node(is_category, key, name, parent_category, suffix, blob_mark)
+            -- when a page or category revision is processed.
+            Returns (old_resolved, new_resolved, cascade_renames).
 
         delete_category(name)
             -- when a category page is deleted or renamed (pass old name).
-            Returns list of (old_resolved, new_resolved) for affected pages.
-
-        update_page(page_path, page_name, parent_category, suffix, blob_mark)
-            -- when a regular page is saved/updated.
-            Returns (old_resolved_or_None, new_resolved).
-            old_resolved is non-None when the page moved.
+            Returns (old_resolved, renames) for the category and children.
 
         delete_page(page_path)
             -- when a page is deleted.
@@ -139,14 +134,11 @@ class CategoryTree:
         resolved set to their bare name, which is correct for root-level
         nodes and will be updated when their page is eventually processed.
         """
-        parts = []
-        if node.parent is not None and node.parent.resolved:
-            parts.append(node.parent.resolved)
-        if node.suffix:
-            parts.append(node.suffix)
-        if node.name:
-            parts.append(node.name)
-        return "/".join(parts)
+        return "/".join(filter(None, (
+            node.parent.resolved if node.parent is not None else "",
+            node.suffix,
+            node.name,
+        )))
 
     # ------------------------------------------------------------------
     # Collision detection
@@ -176,7 +168,7 @@ class CategoryTree:
 
     def _unregister(self, resolved: str, page_path: str):
         """Remove entry only if it belongs to this page (guards against stale removes)."""
-        if resolved is not None and self._path_registry.get(resolved) == page_path:
+        if resolved and self._path_registry.get(resolved) == page_path:
             del self._path_registry[resolved]
 
     # ------------------------------------------------------------------
@@ -326,19 +318,20 @@ class CategoryTree:
         moved = old_resolved if (old_resolved and old_resolved != new_resolved) else None
         return moved, new_resolved, self._cascade_children(node)
 
-    def delete_category(self, name: str) -> list[tuple[str, str]]:
+    def delete_category(self, name: str) -> tuple[Optional[str], list]:
         """Remove a category node (e.g. page deleted or renamed away).
 
         Detaches the node from its parent.  Direct child categories lose their
         parent reference and degrade to bare-name resolution.  Direct child
         pages lose their parent and move to their name-only path.
 
-        Returns list of (old_resolved, new_resolved, blob_mark) for affected pages
-        and child categories.
+        Returns (old_resolved, renames) where old_resolved is the category's
+        last resolved path, and renames is a list of (old, new, blob_mark)
+        triples for affected children.
         """
         node = self.nodes.get(NodeKey(True, name))
         if node is None:
-            return []
+            return None, []
 
         # detach from parent
         self._detach_from_parent(node)
@@ -362,7 +355,7 @@ class CategoryTree:
             if not child.is_category:
                 renames.extend(self._recompute_node(child))
 
-        return renames
+        return node.resolved or None, renames
 
     # ------------------------------------------------------------------
     # Public API — page operations

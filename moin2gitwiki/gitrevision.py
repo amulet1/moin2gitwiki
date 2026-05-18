@@ -162,8 +162,7 @@ class GitExportStream:
         """Compute file ops for removing a page or category from the tree."""
         file_ops: List[str] = []
         if placement.kind == "category":
-            old_resolved = tree.get_category_resolved(placement.category_name)
-            renames = tree.delete_category(placement.category_name)
+            old_resolved, renames = tree.delete_category(placement.category_name)
             if old_resolved is not None:
                 file_ops.append(f"D {old_resolved}.md\n")
             for old, new, blob_mark in renames:
