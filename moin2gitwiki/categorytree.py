@@ -60,6 +60,9 @@ class Node:
         child_pages:      page_path keys of direct child page nodes.
         blob_mark:        Latest content mark — needed to re-emit the file
                           when the node moves due to a cascade.
+        parent:           Direct reference to the parent Node, or None if root.
+                          Set and cleared by attach/detach helpers alongside
+                          parent_category. Used for future path traversal.
     """
     is_category: bool
     name: str
@@ -70,6 +73,7 @@ class Node:
     child_categories: set = field(default_factory=set)
     child_pages: set = field(default_factory=set)
     blob_mark: Optional[int] = None
+    parent: Optional['Node'] = field(default=None, repr=False)
 
 
 # Keep type aliases for clarity at call sites
@@ -258,6 +262,7 @@ class CategoryTree:
             self.category_nodes[page.parent_category].child_pages.discard(
                 page.page_path
             )
+        page.parent = None
 
     def _attach_page_to_category(self, page: Node):
         """Add page to its new parent category's child_pages set."""
@@ -270,7 +275,9 @@ class CategoryTree:
                     name=page.parent_category,
                     resolved=page.parent_category,
                 )
-            self.category_nodes[page.parent_category].child_pages.add(page.page_path)
+            cat = self.category_nodes[page.parent_category]
+            cat.child_pages.add(page.page_path)
+            page.parent = cat
 
     def _detach_category_from_parent(self, node: Node):
         """Remove category from its current parent's child_categories set."""
@@ -278,6 +285,7 @@ class CategoryTree:
             self.category_nodes[node.parent_category].child_categories.discard(
                 node.name
             )
+        node.parent = None
 
     def _attach_category_to_parent(self, node: Node):
         """Add category to its new parent's child_categories set."""
@@ -288,7 +296,9 @@ class CategoryTree:
                     name=node.parent_category,
                     resolved=node.parent_category,
                 )
-            self.category_nodes[node.parent_category].child_categories.add(node.name)
+            parent = self.category_nodes[node.parent_category]
+            parent.child_categories.add(node.name)
+            node.parent = parent
 
     # ------------------------------------------------------------------
     # Public API — category operations
