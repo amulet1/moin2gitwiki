@@ -186,33 +186,22 @@ class GitExportStream:
     ) -> List[str]:
         """Compute file ops for adding or updating a page or category in the tree."""
         file_ops: List[str] = []
-        if placement.kind == "category":
-            old_resolved = tree.get_category_resolved(placement.category_name)
-            tree.set_category_blob_mark(placement.category_name, blob_ref)
-            renames = tree.update_category(
-                placement.category_name,
-                placement.parent_category,
-                placement.suffix,
-            )
-            new_resolved = tree.get_category_resolved(placement.category_name)
-            if old_resolved is not None and old_resolved != new_resolved:
-                file_ops.append(f"D {old_resolved}.md\n")
-            file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
-            for old, new, blob_mark in renames:
-                if blob_mark is not None:
-                    file_ops.append(f"D {old}.md\n")
-                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
-        else:  # 'page' or 'subpage'
-            old_resolved, new_resolved = tree.update_page(
-                page_path,
-                placement.page_name,
-                placement.parent_category,
-                placement.suffix,
-                blob_ref,
-            )
-            if old_resolved is not None:
-                file_ops.append(f"D {old_resolved}.md\n")
-            file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+        is_cat = placement.kind == "category"
+        key = placement.category_name if is_cat else page_path
+        name = placement.category_name if is_cat else placement.page_name
+        old_resolved, new_resolved, renames = tree.update_node(
+            is_cat, key, name,
+            placement.parent_category,
+            placement.suffix,
+            blob_ref,
+        )
+        if old_resolved is not None:
+            file_ops.append(f"D {old_resolved}.md\n")
+        file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
+        for old, new, blob_mark in renames:
+            if blob_mark is not None:
+                file_ops.append(f"D {old}.md\n")
+                file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
         return file_ops
 
     def _emit_commit(
