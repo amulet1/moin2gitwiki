@@ -114,8 +114,10 @@ class GitExportStream:
         """Generate Home page content from current tree state."""
         tree = self._category_tree
         current_paths = sorted(set(
-            [node.resolved for node in tree.page_nodes.values() if node.resolved]
-            + [node.resolved for node in tree.category_nodes.values() if node.resolved]
+            node.resolved
+            for nodes in (tree.page_nodes.values(), tree.category_nodes.values())
+            for node in nodes
+            if node.resolved
         ))
         pages = {}
         for page_path in current_paths:
