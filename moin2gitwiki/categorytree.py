@@ -4,21 +4,16 @@ categorytree.py - Incremental category tree for moin2gitwiki
 Maintains the mapping from MoinMoin pages/categories to git paths,
 updated incrementally as revisions are processed in chronological order.
 
-Every page and category node is described by three fields:
-
-    parent_category : str | None  -- stripped category name e.g. "Foo", or None
-    suffix          : str         -- path components from the category ref after /
-                                     e.g. "Sub" from CategoryFoo/Sub
-                                          "Sub/Child" from CategoryFoo/Sub/Child
-    page_name       : str         -- sanitized MoinMoin page name (may contain /
-                                     for subpages), e.g. "Some/Page-Name"
+Every node has a name, optional suffix, and a parent pointer.
 
 Resolved path is always:
 
-    resolved(parent_category) / suffix / page_name
+    parent.resolved / suffix / name
 
-with empty components omitted.  Category nodes use the same formula with
-their own stripped name as page_name.
+with empty components omitted. The parent pointer is a direct Node
+reference set by attach/detach helpers. Parent category is passed by
+name to update_category/update_page (external API) and converted to
+a node reference internally.
 
 Callers are responsible for:
   - sanitizing page_name before passing it in
@@ -51,7 +46,6 @@ class Node:
                           or sanitized page name for pages (e.g. "EMail/Setup").
         page_path:        MoinMoin filesystem page_path — stable unique key
                           for pages. None for category nodes.
-        parent_category:  Stripped name of the parent category, or None.
         suffix:           Path components from the category ref after /,
                           e.g. "Sub" from [[CategoryFoo/Sub]].
         resolved:         Cached full path (no file extension).
@@ -63,12 +57,11 @@ class Node:
                           when the node moves due to a cascade.
         parent:           Direct reference to the parent Node, or None if root.
                           Set and cleared by attach/detach helpers alongside
-                          parent_category. Used for future path traversal.
+                          Maintained alongside suffix by attach/detach helpers.
     """
     is_category: bool
     name: str
     page_path: Optional[str] = None
-    parent_category: Optional[str] = None
     suffix: str = ""
     resolved: str = ""
     children: list = field(default_factory=list)
@@ -237,49 +230,27 @@ class CategoryTree:
                 renames.extend(self._recompute_node(child))
         return renames
 
-    def _detach_page_from_category(self, page: Node):
-        """Remove page from its current parent category's children set."""
-        if page.parent_category and page.parent_category in self.category_nodes:
-            parent_node = self.category_nodes[page.parent_category]
-            if page in parent_node.children:
-                parent_node.children.remove(page)
-        page.parent = None
+    def _get_or_create_category_node(self, name: str) -> Node:
+        """Return the category node for name, creating a placeholder if needed."""
+        if name not in self.category_nodes:
+            self.category_nodes[name] = Node(
+                is_category=True,
+                name=name,
+                resolved=name,
+            )
+        return self.category_nodes[name]
 
-    def _attach_page_to_category(self, page: Node):
-        """Add page to its new parent category's children set."""
-        if page.parent_category:
-            if page.parent_category not in self.category_nodes:
-                # create a placeholder node — will be properly populated when
-                # that category page is processed
-                self.category_nodes[page.parent_category] = Node(
-                    is_category=True,
-                    name=page.parent_category,
-                    resolved=page.parent_category,
-                )
-            cat = self.category_nodes[page.parent_category]
-            cat.children.append(page)
-            page.parent = cat
+    def _detach_from_parent(self, node: Node):
+        """Remove node from its parent's children and clear parent pointer."""
+        if node.parent is not None:
+            if node in node.parent.children:
+                node.parent.children.remove(node)
+            node.parent = None
 
-    def _detach_category_from_parent(self, node: Node):
-        """Remove category from its current parent's children set."""
-        if node.parent_category and node.parent_category in self.category_nodes:
-            parent_node = self.category_nodes[node.parent_category]
-            if node in parent_node.children:
-                parent_node.children.remove(node)
-        node.parent = None
-
-    def _attach_category_to_parent(self, node: Node):
-        """Add category to its new parent's children set."""
-        if node.parent_category:
-            if node.parent_category not in self.category_nodes:
-                self.category_nodes[node.parent_category] = Node(
-                    is_category=True,
-                    name=node.parent_category,
-                    resolved=node.parent_category,
-                )
-            parent = self.category_nodes[node.parent_category]
-            parent.children.append(node)
-            node.parent = parent
+    def _attach_to_parent(self, node: Node, parent: Node):
+        """Add node to parent's children and set parent pointer."""
+        parent.children.append(node)
+        node.parent = parent
 
     # ------------------------------------------------------------------
     # Public API — category operations
@@ -308,27 +279,19 @@ class CategoryTree:
         node = self.category_nodes.get(name)
 
         if node is None:
-            # brand-new category
             node = Node(is_category=True, name=name, resolved=name)
             self.category_nodes[name] = node
 
-        changed = (
-            node.parent_category != parent_category
-            or node.suffix != suffix
-        )
-        if not changed:
+        new_parent = self._get_or_create_category_node(parent_category) if parent_category else None
+
+        if node.parent == new_parent and node.suffix == suffix:
             return []
 
-        # detach from old parent
-        self._detach_category_from_parent(node)
-
-        node.parent_category = parent_category
+        self._detach_from_parent(node)
         node.suffix = suffix
+        if new_parent is not None:
+            self._attach_to_parent(node, new_parent)
 
-        # attach to new parent
-        self._attach_category_to_parent(node)
-
-        # recompute this node and everything below it
         return self._recompute_category(name)
 
     def delete_category(self, name: str) -> list[tuple[str, str]]:
@@ -346,14 +309,13 @@ class CategoryTree:
             return []
 
         # detach from parent
-        self._detach_category_from_parent(node)
+        self._detach_from_parent(node)
 
         # save children before deleting — we'll iterate them after
         children = list(node.children)
 
         # detach children — they now have no parent
         for child in children:
-            child.parent_category = None
             child.parent = None
 
         del self.category_nodes[name]
@@ -407,12 +369,11 @@ class CategoryTree:
         old_resolved = page.resolved or None
 
         # update category membership if it changed
-        if page.parent_category != parent_category:
-            self._detach_page_from_category(page)
-            page.parent_category = parent_category
-            self._attach_page_to_category(page)
-        else:
-            page.parent_category = parent_category
+        new_parent = self._get_or_create_category_node(parent_category) if parent_category else None
+        if page.parent != new_parent:
+            self._detach_from_parent(page)
+            if new_parent is not None:
+                self._attach_to_parent(page, new_parent)
 
         page.name = page_name
         page.suffix = suffix
@@ -441,7 +402,7 @@ class CategoryTree:
         if page is None:
             return None
 
-        self._detach_page_from_category(page)
+        self._detach_from_parent(page)
         self._unregister(page.resolved, page_path)
         del self.page_nodes[page_path]
 
