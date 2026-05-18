@@ -204,23 +204,12 @@ class CategoryTree:
 
         return renames
 
-    def _recompute_category(self, name: str) -> list[tuple[str, str, Optional[int]]]:
-        """Recompute .resolved for a category and cascade to all descendants.
+    def _cascade_children(self, node: Node) -> list[tuple[str, str, Optional[int]]]:
+        """Cascade resolved path recomputation to all children of node.
 
-        Returns renames for descendants only — the category itself is not
-        included, as callers handle its own file move directly.
+        Processes category children before page children at each level
+        so category resolved paths are correct before pages use them.
         """
-        node = self.category_nodes.get(name)
-        if node is None:
-            return []
-
-        new_resolved = self._compute_resolved(node)
-        if new_resolved == node.resolved:
-            return []  # nothing changed — prune cascade early
-
-        node.resolved = new_resolved
-        self.logger.debug(f"Category '{name}' resolved -> '{new_resolved}'")
-
         renames: list[tuple[str, str, Optional[int]]] = []
         for child in node.children:
             if child.is_category:
@@ -256,43 +245,74 @@ class CategoryTree:
     # Public API — category operations
     # ------------------------------------------------------------------
 
-    def update_category(
+    def update_node(
         self,
+        is_category: bool,
+        key: str,
         name: str,
         parent_category: Optional[str],
         suffix: str,
-    ) -> list[tuple[str, str]]:
-        """Update or create a category node.
-
-        Call when a category page revision is processed.
+        blob_mark: int,
+    ) -> tuple[Optional[str], str, list]:
+        """Update or create a node — category or page.
 
         Parameters:
-            name:            Stripped category name e.g. "Foo"
-            parent_category: Stripped name of its parent, or None
-            suffix:          Path suffix between parent and this node
+            is_category:      True for category pages, False for regular pages.
+            key:              Dict key — stripped name for categories,
+                              page_path for pages.
+            name:             Sanitized name — same as key for categories,
+                              page name for pages.
+            parent_category:  Stripped parent category name, or None.
+            suffix:           Path components from category ref after /.
+            blob_mark:        Content mark just written for this revision.
 
         Returns:
-            List of (old_resolved, new_resolved, blob_mark) for pages and child
-            categories that moved.  The category itself is not included — callers
-            handle its own file move directly.
+            (old_resolved, new_resolved, cascade_renames) where old_resolved
+            is None if the node did not move, and cascade_renames lists
+            (old, new, blob_mark) triples for children that moved.
         """
-        node = self.category_nodes.get(name)
+        nodes_dict = self.category_nodes if is_category else self.page_nodes
+        node = nodes_dict.get(key)
 
         if node is None:
-            node = Node(is_category=True, name=name, resolved=name)
-            self.category_nodes[name] = node
+            node = Node(
+                is_category=is_category,
+                name=name,
+                page_path=None if is_category else key,
+            )
+            nodes_dict[key] = node
+
+        # always update blob_mark — needed for future cascade re-emissions
+        node.blob_mark = blob_mark
 
         new_parent = self._get_or_create_category_node(parent_category) if parent_category else None
 
-        if node.parent == new_parent and node.suffix == suffix:
-            return []
+        if node.parent != new_parent:
+            self._detach_from_parent(node)
+            if new_parent is not None:
+                self._attach_to_parent(node, new_parent)
 
-        self._detach_from_parent(node)
+        node.name = name
         node.suffix = suffix
-        if new_parent is not None:
-            self._attach_to_parent(node, new_parent)
 
-        return self._recompute_category(name)
+        old_resolved = node.resolved or None
+
+        if is_category:
+            new_resolved = self._compute_resolved(node)
+            if new_resolved == old_resolved:
+                return None, node.resolved, []
+            self.logger.debug("Category '%s' resolved -> '%s'", name, new_resolved)
+            node.resolved = new_resolved
+        else:
+            candidate = self._compute_resolved(node)
+            new_resolved = self._unique_path(candidate, key)
+            if old_resolved and old_resolved != new_resolved:
+                self._unregister(old_resolved, key)
+            self._register(new_resolved, key)
+            node.resolved = new_resolved
+
+        moved = old_resolved if (old_resolved and old_resolved != new_resolved) else None
+        return moved, new_resolved, self._cascade_children(node)
 
     def delete_category(self, name: str) -> list[tuple[str, str]]:
         """Remove a category node (e.g. page deleted or renamed away).
@@ -336,61 +356,6 @@ class CategoryTree:
     # Public API — page operations
     # ------------------------------------------------------------------
 
-    def update_page(
-        self,
-        page_path: str,
-        page_name: str,
-        parent_category: Optional[str],
-        suffix: str,
-        blob_mark: int,
-    ) -> tuple[Optional[str], str]:
-        """Update or create a page node.
-
-        Call when a page revision is processed.
-
-        Parameters:
-            page_path:        MoinMoin filesystem page_path (stable unique key)
-            page_name:        Sanitized page name, may include / for subpages
-            parent_category:  Stripped category name from page content, or None
-            suffix:           Suffix from category ref e.g. "Sub" from CategoryFoo/Sub
-            blob_mark:        Content mark just written for this revision
-
-        Returns:
-            (old_resolved, new_resolved) where old_resolved is None if the page
-            is new or did not move.  Caller should move the page if old_resolved
-            is set.
-        """
-        page = self.page_nodes.get(page_path)
-
-        if page is None:
-            page = Node(is_category=False, name=page_name, page_path=page_path)
-            self.page_nodes[page_path] = page
-
-        old_resolved = page.resolved or None
-
-        # update category membership if it changed
-        new_parent = self._get_or_create_category_node(parent_category) if parent_category else None
-        if page.parent != new_parent:
-            self._detach_from_parent(page)
-            if new_parent is not None:
-                self._attach_to_parent(page, new_parent)
-
-        page.name = page_name
-        page.suffix = suffix
-        page.blob_mark = blob_mark
-
-        candidate = self._compute_resolved(page)
-        new_resolved = self._unique_path(candidate, page_path)
-
-        if old_resolved and old_resolved != new_resolved:
-            self._unregister(old_resolved, page_path)
-
-        self._register(new_resolved, page_path)
-        page.resolved = new_resolved
-
-        moved = old_resolved if (old_resolved and old_resolved != new_resolved) else None
-        return (moved, new_resolved)
-
     def delete_page(self, page_path: str) -> Optional[str]:
         """Remove a page node.
 
@@ -417,16 +382,3 @@ class CategoryTree:
         """Return the current resolved path for a category, or None if unknown."""
         node = self.category_nodes.get(name)
         return node.resolved if node else None
-
-    def set_category_blob_mark(self, name: str, blob_mark: int):
-        """Store the latest content mark for a category page.
-
-        Called after writing the category page content, before update_category.
-        The mark is used to re-emit the file if the category later moves due
-        to a cascade from an ancestor change.
-        """
-        node = self.category_nodes.get(name)
-        if node is None:
-            node = Node(is_category=True, name=name, resolved=name)
-            self.category_nodes[name] = node
-        node.blob_mark = blob_mark
