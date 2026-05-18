@@ -56,8 +56,9 @@ class Node:
                           e.g. "Sub" from [[CategoryFoo/Sub]].
         resolved:         Cached full path (no file extension).
                           Always kept up to date; recomputed on any ancestor change.
-        child_categories: Stripped names of direct child category nodes.
-        child_pages:      page_path keys of direct child page nodes.
+        children:         Direct child nodes (both category and page nodes).
+                          Categories are cascaded before pages to ensure their
+                          resolved paths are correct before pages are recomputed.
         blob_mark:        Latest content mark — needed to re-emit the file
                           when the node moves due to a cascade.
         parent:           Direct reference to the parent Node, or None if root.
@@ -70,8 +71,7 @@ class Node:
     parent_category: Optional[str] = None
     suffix: str = ""
     resolved: str = ""
-    child_categories: set = field(default_factory=set)
-    child_pages: set = field(default_factory=set)
+    children: list = field(default_factory=list)
     blob_mark: Optional[int] = None
     parent: Optional['Node'] = field(default=None, repr=False)
 
@@ -216,25 +216,22 @@ class CategoryTree:
 
         renames: list[tuple[str, str, Optional[int]]] = []
 
-        # cascade to child categories first (depth-first so their .resolved
-        # is correct before child pages are processed)
-        for child_name in node.child_categories:
-            child = self.category_nodes.get(child_name)
-            if child is None:
-                continue
-            old_child_resolved = child.resolved
-            child_renames = self._recompute_category(child_name)
-            new_child_resolved = child.resolved
-            # include the child category's own file move
-            if old_child_resolved != new_child_resolved:
-                renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
-            renames.extend(child_renames)
+        # cascade categories first (their .resolved must be correct before
+        # pages are recomputed), then pages
+        for child in node.children:
+            if child.is_category:
+                old_child_resolved = child.resolved
+                child_renames = self._recompute_category(child.name)
+                new_child_resolved = child.resolved
+                if old_child_resolved != new_child_resolved:
+                    renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
+                renames.extend(child_renames)
 
-        # cascade to pages directly attached to this category
-        for page_path in node.child_pages:
-            page = self.page_nodes.get(page_path)
-            if page:
-                renames.extend(self._recompute_page(page))
+        for child in node.children:
+            if not child.is_category:
+                page = self.page_nodes.get(child.page_path)
+                if page:
+                    renames.extend(self._recompute_page(page))
 
         return renames
 
@@ -257,15 +254,15 @@ class CategoryTree:
         return [(old_resolved, new_resolved, page.blob_mark)]
 
     def _detach_page_from_category(self, page: Node):
-        """Remove page from its current parent category's child_pages set."""
+        """Remove page from its current parent category's children set."""
         if page.parent_category and page.parent_category in self.category_nodes:
-            self.category_nodes[page.parent_category].child_pages.discard(
-                page.page_path
-            )
+            parent_node = self.category_nodes[page.parent_category]
+            if page in parent_node.children:
+                parent_node.children.remove(page)
         page.parent = None
 
     def _attach_page_to_category(self, page: Node):
-        """Add page to its new parent category's child_pages set."""
+        """Add page to its new parent category's children set."""
         if page.parent_category:
             if page.parent_category not in self.category_nodes:
                 # create a placeholder node — will be properly populated when
@@ -276,19 +273,19 @@ class CategoryTree:
                     resolved=page.parent_category,
                 )
             cat = self.category_nodes[page.parent_category]
-            cat.child_pages.add(page.page_path)
+            cat.children.append(page)
             page.parent = cat
 
     def _detach_category_from_parent(self, node: Node):
-        """Remove category from its current parent's child_categories set."""
+        """Remove category from its current parent's children set."""
         if node.parent_category and node.parent_category in self.category_nodes:
-            self.category_nodes[node.parent_category].child_categories.discard(
-                node.name
-            )
+            parent_node = self.category_nodes[node.parent_category]
+            if node in parent_node.children:
+                parent_node.children.remove(node)
         node.parent = None
 
     def _attach_category_to_parent(self, node: Node):
-        """Add category to its new parent's child_categories set."""
+        """Add category to its new parent's children set."""
         if node.parent_category:
             if node.parent_category not in self.category_nodes:
                 self.category_nodes[node.parent_category] = Node(
@@ -297,7 +294,7 @@ class CategoryTree:
                     resolved=node.parent_category,
                 )
             parent = self.category_nodes[node.parent_category]
-            parent.child_categories.add(node.name)
+            parent.children.append(node)
             node.parent = parent
 
     # ------------------------------------------------------------------
@@ -367,42 +364,31 @@ class CategoryTree:
         # detach from parent
         self._detach_category_from_parent(node)
 
-        # save child sets before deleting — we'll iterate them after
-        child_categories = set(node.child_categories)
-        child_pages = set(node.child_pages)
+        # save children before deleting — we'll iterate them after
+        children = list(node.children)
 
-        # detach child categories — they now have no parent
-        for child_name in child_categories:
-            child = self.category_nodes.get(child_name)
-            if child:
-                child.parent_category = None
-
-        # detach child pages — they now have no parent category
-        for page_path in child_pages:
-            page = self.page_nodes.get(page_path)
-            if page:
-                page.parent_category = None
+        # detach children — they now have no parent
+        for child in children:
+            child.parent_category = None
+            child.parent = None
 
         del self.category_nodes[name]
 
         # recompute everything that was under this node
         renames: list[tuple[str, str, Optional[int]]] = []
 
-        for child_name in child_categories:
-            child = self.category_nodes.get(child_name)
-            if child is None:
-                continue
-            old_child_resolved = child.resolved
-            child_renames = self._recompute_category(child_name)
-            new_child_resolved = child.resolved
-            if old_child_resolved != new_child_resolved:
-                renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
-            renames.extend(child_renames)
+        for child in children:
+            if child.is_category:
+                old_child_resolved = child.resolved
+                child_renames = self._recompute_category(child.name)
+                new_child_resolved = child.resolved
+                if old_child_resolved != new_child_resolved:
+                    renames.append((old_child_resolved, new_child_resolved, child.blob_mark))
+                renames.extend(child_renames)
 
-        for page_path in child_pages:
-            page = self.page_nodes.get(page_path)
-            if page:
-                renames.extend(self._recompute_page(page))
+        for child in children:
+            if not child.is_category:
+                renames.extend(self._recompute_page(child))
 
         return renames
 
