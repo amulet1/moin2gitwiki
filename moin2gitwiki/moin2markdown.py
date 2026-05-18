@@ -124,11 +124,12 @@ class Moin2Markdown:
         if self.ctx.category_folders:
             tree = self.ctx.category_tree
             if tree is not None:
-                for stripped in tree.category_nodes:
-                    translated = translated.replace(
-                        f"Category{stripped}".encode(),
-                        stripped.encode(),
-                    )
+                for node in tree.nodes.values():
+                    if node.is_category:
+                        translated = translated.replace(
+                            f"Category{node.name}".encode(),
+                            node.name.encode(),
+                        )
         return translated, primary_category
 
     def extract_content_section(self, html: str, skip=None):

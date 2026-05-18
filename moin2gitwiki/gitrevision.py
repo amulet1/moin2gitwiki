@@ -115,8 +115,7 @@ class GitExportStream:
         tree = self._category_tree
         current_paths = sorted(set(
             node.resolved
-            for nodes in (tree.page_nodes.values(), tree.category_nodes.values())
-            for node in nodes
+            for node in tree.nodes.values()
             if node.resolved
         ))
         pages = {}
