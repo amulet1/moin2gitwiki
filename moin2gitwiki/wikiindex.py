@@ -11,16 +11,6 @@ import attr
 
 from .users import Moin2GitUser
 
-# Regex patterns for MoinMoin category references
-# Matches [[CategoryXxx]], [[CategoryXxx|label]], [[CategoryXxx/Sub|label]]
-_CATEGORY_BRACKETED = re.compile(r'\[\[Category([^\]|]+?)(?:\|[^\]]*)?\]\]')
-# Matches bare CategoryXxx at start of line or after whitespace (not mid-word)
-_CATEGORY_BARE = re.compile(r'(?:^|(?<=\s))Category([\w/]+)')
-# Matches a line consisting entirely of category references, whitespace and separators
-_CATEGORY_ONLY_LINE = re.compile(
-    r'^[\s\-]*(?:(?:\[\[Category[^\]]+\]\]|Category[\w/]+)[\s\-]*)+$'
-)
-
 
 class CategoryPlacement(NamedTuple):
     """Classification of a MoinMoin page for category tree placement.
@@ -89,24 +79,6 @@ class MoinEditEntry:
             self.page_revision,
         )
 
-    def wiki_content_bytes(self):
-        """The content of the wiki revision retrieved as a byte string"""
-        lines = self.wiki_content()
-        if lines is None:
-            return lines
-        else:
-            lines.append("")
-            return "\n".join(lines).encode("utf-8")
-
-    def wiki_content(self):
-        """The content of the wiki revision as an array of strings"""
-        lines = []
-        try:
-            lines = self.wiki_content_path().read_text().splitlines(keepends=False)
-        except OSError:
-            lines = None
-        return lines
-
     def attachment_content_path(self):
         """The file pathname of the attachment file"""
         if self.attachment is None:
@@ -133,8 +105,8 @@ class MoinEditEntry:
         attachment_dir defaults to 'a' for otterwiki, '_attachments' for gollum/gitea."""
         if self.attachment is None:
             raise ValueError("No attachment path set")
-        subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
-        attachment_dir = getattr(self.ctx, "attachment_dir", "_attachments")
+        subpages_as_dirs = self.ctx.subpages_as_dirs
+        attachment_dir = self.ctx.attachment_dir
         decoded_page = self.resolved_page_name()
         if subpages_as_dirs:
             return os.path.join(decoded_page, attachment_dir, self.attachment)
@@ -168,8 +140,8 @@ class MoinEditEntry:
             "|": "_",
             "\0": "_",
         }
-        spaces_to_hyphens = getattr(self.ctx, "spaces_to_hyphens", True)
-        strip_dots = getattr(self.ctx, "strip_dots", False)
+        spaces_to_hyphens = self.ctx.spaces_to_hyphens
+        strip_dots = self.ctx.strip_dots
         parts = thing.split("/")
         sanitized = []
         for part in parts:
@@ -199,39 +171,6 @@ class MoinEditEntry:
     def page_path_unescaped(self) -> str:
         """Unescape the page path"""
         return self.unescape(self.page_path)
-
-    def primary_category_ref(self, lines, skip=None):
-        """Return the first category membership ref from page content, or None.
-
-        Only considers lines consisting entirely of category references —
-        matching how MoinMoin's editor places membership declarations.
-        Scans in reverse so the bottom of the page is checked first.
-
-        The returned name has the Category prefix already stripped.
-
-        Parameters:
-            lines:  Page content as list of strings from wiki_content().
-            skip:   If set, skip refs whose root name matches this value,
-                    avoiding self-references on category pages.
-        """
-        if not lines:
-            return None
-        for line in reversed(lines):
-            if line.startswith("##"):
-                continue
-            if not _CATEGORY_ONLY_LINE.match(line):
-                continue
-            for m in _CATEGORY_BRACKETED.finditer(line):
-                name = m.group(1).strip()
-                if skip and name.split("/", 1)[0] == skip:
-                    continue
-                return name
-            for m in _CATEGORY_BARE.finditer(line):
-                name = m.group(1).strip()
-                if skip and name.split("/", 1)[0] == skip:
-                    continue
-                return name
-        return None
 
     def plain_placement(self) -> CategoryPlacement:
         """Classify this page for plain (non-category-folders) mode.
@@ -268,10 +207,10 @@ class MoinEditEntry:
     def _classify_name_only(self, decoded: str) -> CategoryPlacement:
         """Classify a decoded page name without reading content.
 
-        Used by both prev_category_placement() (always name-only) and
-        category_placement() for the subpage case (also name-only).
-        For 'category' and 'page' kinds the parent/suffix fields are
-        left empty — callers that need them must read content separately.
+        Used by name_placement(), prev_category_placement(), and
+        prev_plain_placement(). For 'category' and 'page' kinds the
+        parent_category and suffix fields are left empty — callers that
+        need them must supply primary_category separately.
         """
         if decoded.startswith("Category"):
             stripped = decoded[len("Category"):].strip()
@@ -319,37 +258,31 @@ class MoinEditEntry:
             self.decode_moin_name(self.previous_page_name)
         )
 
-    def category_placement(self, lines=None) -> CategoryPlacement:
-        """Classify this page for category tree placement.
+    def name_placement(self) -> CategoryPlacement:
+        """Classify this page by name alone — no content reading.
 
-        Three cases, determined by the decoded page name:
+        Returns kind, category_name, and page_name. For 'category' and
+        'page' kinds, parent_category and suffix are always empty — callers
+        must supply primary_category separately to complete the placement.
+        """
+        return self._classify_name_only(self.decode_moin_name(self.page_name))
 
-        'category' — name is "CategoryFoo" (no slash after stripping prefix).
-            The category key is "Foo". Parent and suffix are read from content.
-
-        'subpage' — name is "CategoryFoo/Bar/Baz" (slash present).
-            Belongs to category "Foo" by name alone; "Bar/Baz" is the page_name.
-            No content reading needed.
-
-        'page' — any other name.
-            Parent category and suffix come from the primary category ref in
-            content, e.g. [[CategoryFoo/Sub]] -> parent="Foo", suffix="Sub".
-
-        Returns a CategoryPlacement with fields populated as described above.
-        All page_name values are sanitized and ready for path assembly.
+    def category_placement(self, np: CategoryPlacement, primary_category: Optional[str] = None) -> CategoryPlacement:
+        """Complete category tree placement given name classification and detected category.
 
         Parameters:
-            lines:  Pre-loaded page content from wiki_content(), used to avoid
-                    re-reading the file when content is already available.
+            np:               Result of name_placement() for this revision.
+            primary_category: Primary category detected from HTML content,
+                              Category prefix already stripped, or None.
         """
-        decoded = self.decode_moin_name(self.page_name)
-        placement = self._classify_name_only(decoded)
+        if np.kind == "subpage":
+            return np
 
-        if placement.kind == "subpage":
-            return placement
-
-        if placement.kind == "category":
-            ref = self.primary_category_ref(lines=lines, skip=placement.category_name)
+        if np.kind == "category":
+            # skip self-references
+            ref = primary_category
+            if ref and ref.split("/", 1)[0] == np.category_name:
+                ref = None
             if ref:
                 parts = ref.split("/", 1)
                 parent_category = parts[0].strip()
@@ -359,16 +292,15 @@ class MoinEditEntry:
                 suffix = ""
             return CategoryPlacement(
                 kind="category",
-                category_name=placement.category_name,
+                category_name=np.category_name,
                 parent_category=parent_category,
                 suffix=suffix,
                 page_name="",
             )
 
-        # 'page' — read parent category and suffix from content
-        ref = self.primary_category_ref(lines=lines)
-        if ref:
-            parts = ref.split("/", 1)
+        # 'page'
+        if primary_category:
+            parts = primary_category.split("/", 1)
             parent_category = parts[0].strip()
             suffix = parts[1].strip() if len(parts) > 1 else ""
         else:
@@ -379,7 +311,7 @@ class MoinEditEntry:
             category_name=None,
             parent_category=parent_category,
             suffix=suffix,
-            page_name=placement.page_name,
+            page_name=np.page_name,
         )
 
     def markdown_transform(self, thing: str) -> str:
@@ -390,7 +322,7 @@ class MoinEditEntry:
         2. Sanitize each path component (spaces, dots etc. based on wiki type)
         3. Join with / (subpages_as_dirs) or _ (gollum/gitea)
         """
-        subpages_as_dirs = getattr(self.ctx, "subpages_as_dirs", False)
+        subpages_as_dirs = self.ctx.subpages_as_dirs
         decoded = self.decode_moin_name(thing)
         parts = [self.sanitize_for_path(p) for p in decoded.split("/") if p]
         return "/".join(parts) if subpages_as_dirs else "_".join(parts)
@@ -408,7 +340,7 @@ class MoinEditEntry:
         falling back to markdown_transform() if the page is not yet tracked
         (e.g. during translation before the revision has been committed to the tree).
         """
-        tree = getattr(self.ctx, "category_tree", None)
+        tree = self.ctx.category_tree
         if tree is not None:
             resolved = tree.get_page_resolved(self.page_path)
             if resolved is not None:

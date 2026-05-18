@@ -12,14 +12,6 @@ from .wikiindex import MoinEditEntries
 from .wikiindex import MoinEditEntry
 
 
-def is_a_linemark_para(tag):
-    return (
-        tag.name == "p"
-        and tag.has_attr("class")
-        and re.match(r"line\d+", tag["class"][0])  # fix: was r"line\\d+" (matched literal backslash)
-    )
-
-
 @attr.s(kw_only=True, frozen=True, slots=True)
 class Moin2Markdown:
     """
@@ -28,7 +20,7 @@ class Moin2Markdown:
     Attributes:
         fetch_cache:    A FetchCache object used to retrieve URLs
         url_prefix:     The URL prefix of the Moin wiki web presence
-        link_table:     A mapping of Moin unescaped names to page names
+        revisions:      MoinEditEntries object for link resolution
         ctx:            Context object - logger and user mapping etc
     """
 
@@ -86,10 +78,10 @@ class Moin2Markdown:
         Build a translator object
 
         Parameters:
-            ctx:            Context object (logger etc)
-            cache_directory:    Path object for the cache directory
-            url_prefix:     The base URL for the MoinMoin wiki
-            link_table:     A translation table for wiki links
+            ctx:              Context object (logger etc)
+            cache_directory:  Path object for the cache directory
+            url_prefix:       The base URL for the MoinMoin wiki
+            revisions:        MoinEditEntries object for link resolution
 
         """
         #
@@ -105,92 +97,112 @@ class Moin2Markdown:
             ctx=ctx,
         )
 
-    def retrieve_and_translate(self, revision: MoinEditEntry, lines=None) -> Optional[bytes]:
+    def retrieve_and_translate(self, revision: MoinEditEntry, skip=None):
         """
         Retrieve a wiki revision, and translate it to markdown
 
         Parameters:
             revision:    The wiki revision object for the revision we want
-            lines:       Pre-loaded page content lines, or None if not available
+            skip:        Category name to skip during detection (for self-reference
+                         avoidance on category pages), or None
 
-        If the revision maps to an empty object - ie it deleted the page, or
-        similar, then a None object is returned.
-
+        Returns a tuple (content, primary_category) where content is the
+        translated markdown bytes (or None if the revision has no content),
+        and primary_category is the detected primary category name (or None).
         """
-        # check if this revision has any content...
-        if lines is None:
-            return None
-        else:
-            target = self.url_prefix.copy()
-            target /= revision.page_path_unescaped()
-            target.args["action"] = "recall"
-            target.args["rev"] = revision.page_revision
-            content = self.fetch_cache.fetch(target.url)
-            main_content = self.extract_content_section(content)
-            translated = self.translate(main_content)
-            # when category-folders is enabled, replace CategoryXxx with Xxx
-            # for all known categories so converted pages use clean names
-            if getattr(self.ctx, "category_folders", False):
-                tree = getattr(self.ctx, "category_tree", None)
-                if tree is not None:
-                    for stripped in tree.category_nodes:
-                        translated = translated.replace(
-                            f"Category{stripped}".encode(),
-                            stripped.encode(),
-                        )
-            return translated
+        if not revision.wiki_content_path().is_file():
+            return None, None
+        target = self.url_prefix.copy()
+        target /= revision.page_path_unescaped()
+        target.args["action"] = "recall"
+        target.args["rev"] = revision.page_revision
+        content = self.fetch_cache.fetch(target.url)
+        main_content, primary_category = self.extract_content_section(content, skip=skip)
+        translated = self.translate(main_content)
+        # when category-folders is enabled, replace CategoryXxx with Xxx
+        # for all known categories so converted pages use clean names
+        if self.ctx.category_folders:
+            tree = self.ctx.category_tree
+            if tree is not None:
+                for stripped in tree.category_nodes:
+                    translated = translated.replace(
+                        f"Category{stripped}".encode(),
+                        stripped.encode(),
+                    )
+        return translated, primary_category
 
-    def extract_content_section(self, html: str) -> str:
+    def extract_content_section(self, html: str, skip=None):
         """
-        Extract the content part of the HTML, and simplify
+        Extract the content part of the HTML, simplify it, and detect
+        the primary category membership.
 
-        Parameters:
-            html:    The html data
+        Returns a tuple (simplified_html, primary_category) where
+        primary_category is the last category link found in a linemark
+        paragraph, or None if no category link was found.
 
-        Pulls out the content div and simplifies the  HTML.
-        Simplification consists of:-
-
+        Simplification consists of:
         - stripping out redundant anchor spans
         - remove the additional line marking paragraphs
         - rewrite a/hrefs
-        - strip internal a/hrefs that have no existng target
+        - strip internal a/hrefs that have no existing target
         - strip class attributes from links
         - remap any emoji img to the emoji sequence
-
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         # fix: Explorer theme uses id="page_content", Modern theme uses id="content"
         content = soup.find(id="page_content") or soup.find(id="content")
         if content is None:
-            return ""
+            return "", None
         #
-        # now strip out excess rubbish - anchor spans
-        for tag in content.find_all(class_="anchor"):
-            tag.decompose()
+        # Single pass over all tags — handle each by type.
+        # lxml correctly isolates unclosed <p> tags so each paragraph contains
+        # only its own children; depth-first order means parent is visited
+        # before its children.
         #
-        # Remove line??? CSS class from <p> tags but keep them as paragraphs
-        # so pandoc preserves paragraph breaks — unwrapping merges content inline
-        for tag in content.find_all(is_a_linemark_para):
-            del tag["class"]
+        # Category detection: track the current linemark <p> object so that
+        # tag.parent is current_linemark_p correctly identifies direct children
+        # of a linemark paragraph. Category links must be direct children of a
+        # linemark paragraph — nested links (e.g. inside <strong>) are ignored.
+        last_category = None
+        current_p_category = None
+        current_linemark_p = None
         #
-        # now find all the links, and if within the wiki, rewrite
-        for tag in content.find_all("a"):
-            if not tag.get("href"):  # fix: skip <a> tags without href to avoid KeyError
-                continue
-            target = tag["href"]
-            if target:
+        for tag in content.find_all(True):
+            if tag.name == "p":
+                # commit previous paragraph's category on entering a new <p>
+                if current_p_category is not None:
+                    last_category = current_p_category
+                    current_p_category = None
+                if tag.has_attr("class") and re.match(r"line\d+", tag["class"][0]):
+                    current_linemark_p = tag
+                    del tag["class"]
+                else:
+                    current_linemark_p = None
+
+            elif tag.name == "span" and "anchor" in tag.get("class", []):
+                tag.decompose()
+
+            elif tag.name == "a":
+                if not tag.get("href"):
+                    continue
+                target = tag["href"]
                 self.ctx.logger.debug(f"Trying to map link {target}")
-                try:  # fix: furl raises ValueError on URLs it misinterprets as hostnames
+                try:
                     url = self.url_prefix.copy().join(target)
                 except ValueError:
                     self.ctx.logger.debug(f"Skipping invalid link {target}")
                     continue
                 if url.url.startswith(self.url_prefix.url):
-                    new_url = (
-                        url.copy().remove(query=True).url[len(self.url_prefix.url) :]
-                    )
+                    new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                     if len(str(url.query)) == 0:
-                        # no query - this is a conventional link
+                        # detect category membership — only direct children of a
+                        # linemark paragraph count as membership declarations
+                        if tag.parent is current_linemark_p and new_url.startswith("Category"):
+                            cat_name = new_url[len("Category"):]
+                            if not (skip and cat_name.split("/", 1)[0] == skip):
+                                if current_p_category is None:
+                                    current_p_category = cat_name
+                        # conventional link — rewrite or strip
                         new_target = self.revisions.get_new_link_target(new_url)
                         if new_target:
                             tag["href"] = new_target
@@ -202,69 +214,61 @@ class Moin2Markdown:
                     ):
                         attach_target = url.query.params["target"]
                         new_target = self.revisions.get_new_attachment_link_target(
-                            new_url,
-                            attach_target,
+                            new_url, attach_target,
                         )
                         if new_target:
                             tag["href"] = new_target
                             self.ctx.logger.debug(f"Attach map -> {new_target}")
                     else:
                         tag.unwrap()
-            #
-            # strip any class attributes on links - tend to upset the translator
-            if tag.has_attr("class"):
-                del tag["class"]
-        #
-        # now find all the images and see if they map to emojis
-        # MoinMoin puts the emoji code in the title, so will purely match on that
-        for tag in content.find_all("img"):
-            if not tag.get("src"):  # fix: skip <img> tags without src to avoid KeyError
-                continue
-            target = tag["src"]
-            self.ctx.logger.debug(f"Image target {target}")
-            if tag.has_attr("title") and tag["title"] in self.smiley_map:
-                tag.replace_with(" " + self.smiley_map[tag["title"]] + " ")
-            elif target:
-                # now find all the images, and if an attachment within the wiki, rewrite
-                url = self.url_prefix.copy().join(target)
-                if url.url.startswith(self.url_prefix.url):
-                    new_url = (
-                        url.copy().remove(query=True).url[len(self.url_prefix.url) :]
-                    )
-                    self.ctx.logger.debug(f"Image params {url.query.params}")
-                    if (
-                        "action" in url.query.params
-                        and "target" in url.query.params
-                        and url.query.params["action"] == "AttachFile"
-                    ):
-                        attach_target = url.query.params["target"]
-                        new_target = self.revisions.get_new_attachment_link_target(
-                            new_url,
-                            attach_target,
-                        )
-                        if new_target:
-                            tag["src"] = new_target
-                            self.ctx.logger.debug(f"Image mapped to {new_target}")
-                else:
-                    self.ctx.logger.debug(f"Not mapped - {url.query.params}")
-            #
-            # strip any class attributes on links - tend to upset the translator
-            if tag.has_attr("class"):
-                del tag["class"]
+                        continue  # tag detached — skip class strip
+                if tag.has_attr("class"):
+                    del tag["class"]
 
-        #
-        # The forms within the data are basically useless - strip the form and input fields
-        for tag in content.find_all("form"):
-            tag.unwrap()
-        for tag in content.find_all("input"):
-            tag.decompose()
+            elif tag.name == "img":
+                if not tag.get("src"):
+                    continue
+                target = tag["src"]
+                self.ctx.logger.debug(f"Image target {target}")
+                if tag.has_attr("title") and tag["title"] in self.smiley_map:
+                    tag.replace_with(" " + self.smiley_map[tag["title"]] + " ")
+                    continue
+                if target:
+                    url = self.url_prefix.copy().join(target)
+                    if url.url.startswith(self.url_prefix.url):
+                        new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
+                        self.ctx.logger.debug(f"Image params {url.query.params}")
+                        if (
+                            "action" in url.query.params
+                            and "target" in url.query.params
+                            and url.query.params["action"] == "AttachFile"
+                        ):
+                            attach_target = url.query.params["target"]
+                            new_target = self.revisions.get_new_attachment_link_target(
+                                new_url, attach_target,
+                            )
+                            if new_target:
+                                tag["src"] = new_target
+                                self.ctx.logger.debug(f"Image mapped to {new_target}")
+                    else:
+                        self.ctx.logger.debug(f"Not mapped - {url.query.params}")
+                if tag.has_attr("class"):
+                    del tag["class"]
 
-        #
-        # This might not always work but removing all <div>s makes output cleaner
-        for tag in content.find_all("div"):
-            tag.unwrap()
+            elif tag.name == "form":
+                tag.unwrap()
 
-        return "".join([str(x) for x in content.contents])
+            elif tag.name == "input":
+                tag.decompose()
+
+            elif tag.name == "div":
+                tag.unwrap()
+
+        # commit last paragraph's category
+        if current_p_category is not None:
+            last_category = current_p_category
+
+        return "".join([str(x) for x in content.contents]), last_category
 
     def translate(self, input: str) -> bytes:
         """Translate HTML to Github Flavoured Markdown using pandoc"""

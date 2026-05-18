@@ -43,20 +43,21 @@ class GitExportStream:
         self,
         revision: MoinEditEntry,
         content: bytes,
-        lines=None,
+        primary_category: Optional[str] = None,
     ):
         """
         Add a wiki revision as a git commit
 
         Parameters:
-            revision:   A wiki revision object
-            content:    The content of the wiki object, after translation, as bytes
-            lines:      Pre-loaded page content from wiki_content()
+            revision:          A wiki revision object
+            content:           The content of the wiki object, after translation, as bytes
+            primary_category:  Primary category detected from HTML content, or None
 
         """
-        category_folders = getattr(self.ctx, "category_folders", False)
+        category_folders = self.ctx.category_folders
         if category_folders:
-            placement = revision.category_placement(lines=lines)
+            np = revision.name_placement()
+            placement = revision.category_placement(np=np, primary_category=primary_category)
             prev_placement = revision.prev_category_placement()
         else:
             placement = revision.plain_placement()

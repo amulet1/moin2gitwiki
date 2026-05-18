@@ -256,12 +256,15 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page)
         with click.progressbar(revisions.entries) as entries:
             for revision in entries:
-                lines = revision.wiki_content()
-                content = translator.retrieve_and_translate(revision=revision, lines=lines)
+                np = revision.name_placement()
+                skip = np.category_name
+                content, primary_category = translator.retrieve_and_translate(
+                    revision=revision, skip=skip,
+                )
                 export.add_wiki_revision(
                     revision=revision,
                     content=content,
-                    lines=lines,
+                    primary_category=primary_category,
                 )
         if home_page == "end":
             export.emit_home_page()
@@ -319,7 +322,10 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     # find the page and translate it
     for revision in revisions.entries:
         if revision.page_name == page and int(revision.page_revision) == version:
-            content = translator.retrieve_and_translate(revision=revision)
+            np = revision.name_placement()
+            content, _ = translator.retrieve_and_translate(
+                revision=revision, skip=np.category_name,
+            )
             print(content.decode("utf-8"))
             break
     else:

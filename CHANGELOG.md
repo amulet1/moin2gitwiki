@@ -9,8 +9,6 @@ Unreleased Changes
 
 ### Fork changes
 
-- fix: regex bug in `is_a_linemark_para()` — `r"line\\d+"` was matching a
-  literal backslash followed by `d` rather than a digit, corrected to `r"line\d+"`
 - fix: `KeyError` crash when processing `<a>` tags without `href` attribute
 - fix: `KeyError` crash when processing `<img>` tags without `src` attribute
 - fix: `ValueError` crash when `furl` misinterprets a relative wiki link
@@ -64,22 +62,30 @@ Unreleased Changes
 - fix: revision handling unified — CategoryTree always initialized
   regardless of `--category-folders`; plain and category-folders modes
   share a single `add_wiki_revision()` code path
-- fix: category detection restricted to lines consisting entirely of
-  category references, matching MoinMoin editor behaviour; category
-  refs in tables, prose, or headings are ignored; lines scanned in
-  reverse so bottom-of-page membership declarations are found first
 - fix: `markdown_page_name()` and `markdown_page_path()` now return
   category-resolved paths when `--category-folders` is enabled, fixing
   `Home.md` links and attachment paths
 - fix: `translate_page` command exits with error and message on stderr
   when the requested page/revision is not found
-- fix: wiki page content read once per revision and passed through the
-  call chain, avoiding redundant disk reads
 - feat: replace `--home-page/--no-home-page` with `--home-page
   [none|end|incremental]` — `end` generates Home.md once at the end
   (default), `incremental` updates it as part of every commit that
   changes page paths, `none` skips it entirely
 - feat: warn when synthetic Home.md overwrites an existing wiki Home page
+- fix: detect primary category from rendered HTML using lxml — switch
+  BeautifulSoup parser from `html.parser` to `lxml` (correctly isolates
+  unclosed `<p>` tags), replace multiple `find_all` passes with a single
+  depth-first traversal; category membership is detected from direct
+  children of linemark paragraphs only, ignoring categories in tables
+  and prose; self-references skipped for category pages
+- fix: local MoinMoin markup no longer read — category detection and
+  content translation both operate entirely from rendered HTML
+- fix: split `category_placement()` into `name_placement()` (pure name
+  classification) and `category_placement(np, primary_category)` to
+  thread the self-reference skip name through the call chain before
+  HTML is fetched
+- fix: replace `getattr(ctx, ...)` with direct attribute access — all
+  context attributes have declared defaults in `Moin2GitContext`
 - docs: add MoinMoin Preparation section documenting surge protection
   requirement (`surge_action_limits = None`) before running conversion
 - docs: update Installation section to reference fork instead of PyPI
