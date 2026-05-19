@@ -90,6 +90,10 @@ class GitExportStream:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
+            is_cat = placement.kind == "category"
+            key = placement.category_name if is_cat else revision.page_path
+            if tree.placement_changed(is_cat, key, placement.parent_category):
+                file_ops.extend(self._delete_side(revision, placement, tree, soft=True))
             file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
             description = f"Add/Update {placement.category_name or placement.page_name}"
 
@@ -113,11 +117,10 @@ class GitExportStream:
     def _generate_home_content(self) -> str:
         """Generate Home page content from current tree state."""
         tree = self._category_tree
-        current_paths = sorted(set(
-            node.resolved
-            for node in tree.nodes.values()
-            if node.resolved
-        ))
+        current_paths = sorted(
+            path for path, blob_mark in tree.all_paths()
+            if blob_mark is not None
+        )
         pages = {}
         for page_path in current_paths:
             page_split = page_path.split("/")
@@ -158,21 +161,20 @@ class GitExportStream:
         revision: MoinEditEntry,
         placement,
         tree: CategoryTree,
+        soft: bool = False,
     ) -> List[str]:
-        """Compute file ops for removing a page or category from the tree."""
+        """Compute file ops for removing a page or category from the tree.
+
+        soft=True: remove_node (node stays in dict, children intact for re-add).
+        soft=False: delete_node (node removed from dict, children detached).
+        """
+        is_cat = placement.kind == "category"
+        key = placement.category_name if is_cat else revision.page_path
+        paths = tree.remove_node(is_cat, key) if soft else tree.delete_node(is_cat, key)
         file_ops: List[str] = []
-        if placement.kind == "category":
-            old_resolved, renames = tree.delete_category(placement.category_name)
-            if old_resolved is not None:
-                file_ops.append(f"D {old_resolved}.md\n")
-            for old, new, blob_mark in renames:
-                if blob_mark is not None:
-                    file_ops.append(f"D {old}.md\n")
-                    file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
-        else:
-            old_resolved = tree.delete_page(revision.page_path)
-            if old_resolved is not None:
-                file_ops.append(f"D {old_resolved}.md\n")
+        for path, blob_mark in paths:
+            if path:
+                file_ops.append(f"D {path}.md\n")
         return file_ops
 
     def _add_side(
@@ -182,24 +184,19 @@ class GitExportStream:
         blob_ref: int,
         tree: CategoryTree,
     ) -> List[str]:
-        """Compute file ops for adding or updating a page or category in the tree."""
-        file_ops: List[str] = []
+        """Compute file ops for adding a page or category to the tree."""
         is_cat = placement.kind == "category"
         key = placement.category_name if is_cat else page_path
         name = placement.category_name if is_cat else placement.page_name
-        old_resolved, new_resolved, renames = tree.update_node(
+        paths = tree.add_node(
             is_cat, key, name,
             placement.parent_category,
-            placement.suffix,
             blob_ref,
         )
-        if old_resolved is not None:
-            file_ops.append(f"D {old_resolved}.md\n")
-        file_ops.append(f"M 100644 :{blob_ref} {new_resolved}.md\n")
-        for old, new, blob_mark in renames:
+        file_ops: List[str] = []
+        for path, blob_mark in paths:
             if blob_mark is not None:
-                file_ops.append(f"D {old}.md\n")
-                file_ops.append(f"M 100644 :{blob_mark} {new}.md\n")
+                file_ops.append(f"M 100644 :{blob_mark} {path}.md\n")
         return file_ops
 
     def _emit_commit(

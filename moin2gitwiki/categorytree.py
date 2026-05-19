@@ -4,21 +4,21 @@ categorytree.py - Incremental category tree for moin2gitwiki
 Maintains the mapping from MoinMoin pages/categories to git paths,
 updated incrementally as revisions are processed in chronological order.
 
-Every node has a name, optional suffix, and a parent pointer.
+Path for any node:
+    resolve(parent_category) / name
 
-Resolved path is always:
+where resolve(parent_category) walks up the parent chain recursively.
+category=None means the node lives at the root level.
 
-    parent.resolved / suffix / name
-
-with empty components omitted. The parent pointer is a direct Node
-reference set by attach/detach helpers. Parent category is passed by
-name to update_category/update_page (external API) and converted to
-a node reference internally via _get_or_create_category_node.
+Two traversal modes used by remove_node/delete_node and add_node:
+  - _collect_delete_paths: leaves first, computes old paths from old prefix
+  - _collect_add_paths:    parent first, computes new paths from new prefix
 
 Callers are responsible for:
-  - sanitizing page_name before passing it in
-  - applying any output-format suffix (e.g. file extension) to resolved paths
-  - acting on the (old_path, new_path, blob_mark) triples returned by update/delete methods
+  - sanitizing names before passing them in
+  - applying file extension to returned paths
+  - emitting D commands from remove_node/delete_node results
+  - emitting M commands from add_node results
 """
 
 from __future__ import annotations
@@ -41,41 +41,27 @@ class NodeKey(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Node types
+# Node
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Node:
     """One page or category in the wiki tree.
 
-    Represents both regular pages (is_category=False) and category pages
-    (is_category=True). Category nodes are keyed by stripped name in
-    nodes dict keyed by NodeKey(is_category, key).
-
     Attributes:
-        is_category:      True if this is a CategoryFoo page.
-        name:             Stripped category name for categories (e.g. "Foo"),
-                          or sanitized page name for pages (e.g. "EMail/Setup").
-        page_path:        MoinMoin filesystem page_path — stable unique key
-                          for pages. None for category nodes.
-        suffix:           Path components from the category ref after /,
-                          e.g. "Sub" from [[CategoryFoo/Sub]].
-        resolved:         Cached full path (no file extension).
-                          Always kept up to date; recomputed on any ancestor change.
-        children:         Direct child nodes (both category and page nodes).
-                          Categories are cascaded before pages to ensure their
-                          resolved paths are correct before pages are recomputed.
-        blob_mark:        Latest content mark — needed to re-emit the file
-                          when the node moves due to a cascade.
-        parent:           Direct reference to the parent Node, or None if root.
-                          Set and cleared by _attach_to_parent and
-                          _detach_from_parent helpers.
+        is_category:  True if this is a CategoryFoo page.
+        name:         Stripped category name for categories (e.g. "Foo"),
+                      or sanitized page name for pages (e.g. "EMail").
+        page_path:    MoinMoin filesystem page_path — stable unique key
+                      for pages. None for category nodes.
+        children:     Direct child nodes (both categories and pages).
+        blob_mark:    Latest content mark — needed to re-emit the file
+                      when the node moves.
+        parent:       Direct reference to the parent Node, or None if root.
     """
     is_category: bool
     name: str
     page_path: Optional[str] = None
-    suffix: str = ""
-    resolved: str = ""
     children: list = field(default_factory=list)
     blob_mark: Optional[int] = None
     parent: Optional['Node'] = field(default=None, repr=False)
@@ -95,144 +81,47 @@ class CategoryTree:
 
     Caller processes revisions in chronological order and calls:
 
-        update_node(is_category, key, name, parent_category, suffix, blob_mark)
+        add_node(is_category, key, name, parent_category, blob_mark)
             -- when a page or category revision is processed.
-            Returns (old_resolved, new_resolved, cascade_renames).
+            Returns list of (path, blob_mark) for M commands.
 
-        delete_category(name)
-            -- when a category page is deleted or renamed (pass old name).
-            Returns (old_resolved, renames) for the category and children.
+        remove_node(is_category, key)
+            -- before add_node when a node is moving to a new location.
+            Soft remove: keeps node in dict with children intact for re-add.
+            Returns list of (path, blob_mark) for D commands.
 
-        delete_page(page_path)
-            -- when a page is deleted.
-            Returns the page's last resolved path, or None.
+        delete_node(is_category, key)
+            -- when a node is actually deleted or renamed away.
+            Hard remove: detaches children, removes from dict.
+            Returns list of (path, blob_mark) for D commands.
 
     All returned paths have no file extension — callers add one if needed.
-    Collision detection adds _2, _3 ... to resolved paths as needed.
     """
 
     def __init__(self, logger: logging.Logger):
-        # NodeKey(is_category, key) -> Node; key is stripped name for categories,
-        # page_path for pages
         self.nodes: dict[NodeKey, Node] = {}
-        # reverse map: resolved_path -> page_path, for collision detection
-        self._path_registry: dict[str, str] = {}
         self.logger = logger
 
     # ------------------------------------------------------------------
-    # Path computation (stateless helpers)
+    # Path computation
     # ------------------------------------------------------------------
 
-    def _compute_resolved(self, node: Node) -> str:
-        """Compute the full path for a node using its parent pointer.
-
-        Uses parent.resolved (cached) as the prefix. This is safe because
-        cascade is always top-down — a parent's resolved is always current
-        by the time we compute a child's resolved.
-
-        Placeholder nodes (created before their page is processed) have
-        resolved set to their bare name, which is correct for root-level
-        nodes and will be updated when their page is eventually processed.
-        """
-        return "/".join(filter(None, (
-            node.parent.resolved if node.parent is not None else "",
-            node.suffix,
-            node.name,
-        )))
+    def _node_path(self, node: Node) -> str:
+        """Compute the full path for a node by walking up the parent chain."""
+        if node.parent is None:
+            return node.name
+        return "/".join(filter(None, (self._node_path(node.parent), node.name)))
 
     # ------------------------------------------------------------------
-    # Collision detection
+    # Tree structure helpers
     # ------------------------------------------------------------------
-
-    def _unique_path(self, candidate: str, page_path: str) -> str:
-        """Return a path unique in the registry, adding _N suffix if needed.
-
-        If the candidate is already registered to *this* page_path, it is
-        returned as-is (idempotent update).
-        """
-        if self._path_registry.get(candidate) == page_path:
-            return candidate
-        if candidate not in self._path_registry:
-            return candidate
-        n = 2
-        while True:
-            attempt = f"{candidate}_{n}"
-            if self._path_registry.get(attempt) == page_path:
-                return attempt
-            if attempt not in self._path_registry:
-                return attempt
-            n += 1
-
-    def _register(self, resolved: str, page_path: str):
-        self._path_registry[resolved] = page_path
-
-    def _unregister(self, resolved: str, page_path: str):
-        """Remove entry only if it belongs to this page (guards against stale removes)."""
-        if resolved and self._path_registry.get(resolved) == page_path:
-            del self._path_registry[resolved]
-
-    # ------------------------------------------------------------------
-    # Internal cascade helpers
-    # ------------------------------------------------------------------
-
-    def _recompute_node(self, node: Node) -> list[tuple[str, str, Optional[int]]]:
-        """Recompute .resolved for a node and cascade to all descendants.
-
-        Handles both category nodes and page nodes. Pages additionally use
-        collision detection and update the path registry.
-
-        Returns list of (old_resolved, new_resolved, blob_mark) for this
-        node and every descendant that moved, with categories cascaded
-        before pages at each level.
-        """
-        old_resolved = node.resolved
-        new_resolved = self._compute_resolved(node)
-
-        if not node.is_category:
-            new_resolved = self._unique_path(new_resolved, node.page_path)
-            if old_resolved and old_resolved != new_resolved:
-                self._unregister(old_resolved, node.page_path)
-            self._register(new_resolved, node.page_path)
-
-        renames = []
-        if new_resolved != old_resolved:
-            renames.append((old_resolved, new_resolved, node.blob_mark))
-            node.resolved = new_resolved
-
-        # cascade: categories first so their resolved is correct before pages
-        for child in node.children:
-            if child.is_category:
-                renames.extend(self._recompute_node(child))
-        for child in node.children:
-            if not child.is_category:
-                renames.extend(self._recompute_node(child))
-
-        return renames
-
-    def _cascade_children(self, node: Node) -> list[tuple[str, str, Optional[int]]]:
-        """Cascade resolved path recomputation to all children of node.
-
-        Processes category children before page children at each level
-        so category resolved paths are correct before pages use them.
-        """
-        renames: list[tuple[str, str, Optional[int]]] = []
-        for child in node.children:
-            if child.is_category:
-                renames.extend(self._recompute_node(child))
-        for child in node.children:
-            if not child.is_category:
-                renames.extend(self._recompute_node(child))
-        return renames
 
     def _get_or_create_category_node(self, name: str) -> Node:
         """Return the category node for name, creating a placeholder if needed."""
-        if NodeKey(True, name) not in self.nodes:
-            self.nodes[NodeKey(True, name)] = Node(
-                is_category=True,
-                name=name,
-                resolved=name,
-            )
-        return self.nodes[NodeKey(True, name)]
+        key = NodeKey(True, name)
+        if key not in self.nodes:
+            self.nodes[key] = Node(is_category=True, name=name)
+        return self.nodes[key]
 
     def _detach_from_parent(self, node: Node):
         """Remove node from its parent's children and clear parent pointer."""
@@ -247,37 +136,79 @@ class CategoryTree:
         node.parent = parent
 
     # ------------------------------------------------------------------
-    # Public API — category operations
+    # Traversal
     # ------------------------------------------------------------------
 
-    def update_node(
+    def _collect_delete_paths(
+        self, node: Node, prefix: str
+    ) -> list[tuple[str, Optional[int]]]:
+        """Collect (path, blob_mark) for subtree deletion, leaves first.
+
+        prefix is the parent's path — passed down rather than walked up.
+        """
+        node_path = "/".join(filter(None, (prefix, node.name)))
+        paths = []
+        for child in node.children:
+            paths.extend(self._collect_delete_paths(child, node_path))
+        if node.blob_mark is not None:
+            paths.append((node_path, node.blob_mark))
+        return paths
+
+    def _collect_add_paths(
+        self, node: Node, prefix: str
+    ) -> list[tuple[str, Optional[int]]]:
+        """Collect (path, blob_mark) for subtree addition, parent first.
+
+        prefix is the parent's path — passed down to children.
+        Categories are processed before pages at each level.
+        """
+        node_path = "/".join(filter(None, (prefix, node.name)))
+        if node.is_category:
+            self.logger.debug("Category '%s' resolved -> '%s'", node.name, node_path)
+        paths = [(node_path, node.blob_mark)]
+        for child in node.children:
+            if child.is_category:
+                paths.extend(self._collect_add_paths(child, node_path))
+        for child in node.children:
+            if not child.is_category:
+                paths.extend(self._collect_add_paths(child, node_path))
+        return paths
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def placement_changed(
+        self,
+        is_category: bool,
+        key: str,
+        parent_category: Optional[str],
+    ) -> bool:
+        """Return True if the node exists and its parent would change.
+
+        Used to decide whether to call remove_node before add_node.
+        Returns False if the node doesn't exist yet.
+        """
+        node = self.nodes.get(NodeKey(is_category, key))
+        if node is None:
+            return False
+        current_parent_name = node.parent.name if node.parent is not None else None
+        return current_parent_name != parent_category
+
+    def add_node(
         self,
         is_category: bool,
         key: str,
         name: str,
         parent_category: Optional[str],
-        suffix: str,
         blob_mark: int,
-    ) -> tuple[Optional[str], str, list]:
-        """Update or create a node — category or page.
+    ) -> list[tuple[str, Optional[int]]]:
+        """Add or update a node and return (path, blob_mark) for M commands.
 
-        Parameters:
-            is_category:      True for category pages, False for regular pages.
-            key:              Dict key — stripped name for categories,
-                              page_path for pages.
-            name:             Sanitized name — same as key for categories,
-                              page name for pages.
-            parent_category:  Stripped parent category name, or None.
-            suffix:           Path components from category ref after /.
-            blob_mark:        Content mark just written for this revision.
-
-        Returns:
-            (old_resolved, new_resolved, cascade_renames) where old_resolved
-            is None if the node did not move, and cascade_renames lists
-            (old, new, blob_mark) triples for children that moved.
+        Finds an existing node (possibly soft-removed) or creates a new one.
+        Attaches to parent, computes paths for the whole subtree.
         """
         node = self.nodes.get(NodeKey(is_category, key))
-
         if node is None:
             node = Node(
                 is_category=is_category,
@@ -286,104 +217,82 @@ class CategoryTree:
             )
             self.nodes[NodeKey(is_category, key)] = node
 
-        # always update blob_mark — needed for future cascade re-emissions
         node.blob_mark = blob_mark
+        node.name = name
 
         new_parent = self._get_or_create_category_node(parent_category) if parent_category else None
+        if node.parent is not None:
+            self.logger.warning(
+                "add_node called on already-attached node %r (parent=%r) — logic error or duplicate revision",
+                key, node.parent.name,
+            )
+        elif new_parent is not None:
+            self._attach_to_parent(node, new_parent)
 
-        if node.parent != new_parent:
-            self._detach_from_parent(node)
-            if new_parent is not None:
-                self._attach_to_parent(node, new_parent)
+        prefix = self._node_path(new_parent) if new_parent is not None else ""
+        return self._collect_add_paths(node, prefix)
 
-        node.name = name
-        node.suffix = suffix
+    def remove_node(
+        self,
+        is_category: bool,
+        key: str,
+    ) -> list[tuple[str, Optional[int]]]:
+        """Soft-remove: detach from parent, keep in dict with children intact.
 
-        old_resolved = node.resolved or None
-
-        if is_category:
-            new_resolved = self._compute_resolved(node)
-            if new_resolved == old_resolved:
-                return None, node.resolved, []
-            self.logger.debug("Category '%s' resolved -> '%s'", name, new_resolved)
-            node.resolved = new_resolved
-        else:
-            candidate = self._compute_resolved(node)
-            new_resolved = self._unique_path(candidate, key)
-            if old_resolved and old_resolved != new_resolved:
-                self._unregister(old_resolved, key)
-            self._register(new_resolved, key)
-            node.resolved = new_resolved
-
-        moved = old_resolved if (old_resolved and old_resolved != new_resolved) else None
-        return moved, new_resolved, self._cascade_children(node)
-
-    def delete_category(self, name: str) -> tuple[Optional[str], list]:
-        """Remove a category node (e.g. page deleted or renamed away).
-
-        Detaches the node from its parent.  Direct child categories lose their
-        parent reference and degrade to bare-name resolution.  Direct child
-        pages lose their parent and move to their name-only path.
-
-        Returns (old_resolved, renames) where old_resolved is the category's
-        last resolved path, and renames is a list of (old, new, blob_mark)
-        triples for affected children.
+        Used before add_node when a node is moving to a new location.
+        Returns (path, blob_mark) list for D commands, leaves first.
         """
-        node = self.nodes.get(NodeKey(True, name))
+        node = self.nodes.get(NodeKey(is_category, key))
         if node is None:
-            return None, []
-
-        # detach from parent
+            self.logger.warning("remove_node called on unknown node %r", key)
+            return []
+        prefix = self._node_path(node.parent) if node.parent is not None else ""
+        paths = self._collect_delete_paths(node, prefix)
         self._detach_from_parent(node)
+        return paths
 
-        # save children before deleting — we'll iterate them after
-        children = list(node.children)
+    def delete_node(
+        self,
+        is_category: bool,
+        key: str,
+    ) -> list[tuple[str, Optional[int]]]:
+        """Hard-remove: detach, clear children's parents, remove from dict.
 
-        # detach children — they now have no parent
-        for child in children:
-            child.parent = None
-
-        del self.nodes[NodeKey(True, name)]
-
-        # recompute everything that was under this node
-        renames: list[tuple[str, str, Optional[int]]] = []
-
-        for child in children:
-            if child.is_category:
-                renames.extend(self._recompute_node(child))
-        for child in children:
-            if not child.is_category:
-                renames.extend(self._recompute_node(child))
-
-        return node.resolved or None, renames
-
-    # ------------------------------------------------------------------
-    # Public API — page operations
-    # ------------------------------------------------------------------
-
-    def delete_page(self, page_path: str) -> Optional[str]:
-        """Remove a page node.
-
-        Call when a page deletion is processed.
-
-        Returns the page's last resolved path, or None if the page was not tracked.
+        Used for actual deletions and renames (old name removed).
+        Returns (path, blob_mark) list for D commands, leaves first.
         """
-        page = self.nodes.get(NodeKey(False, page_path))
-        if page is None:
-            return None
+        node = self.nodes.get(NodeKey(is_category, key))
+        if node is None:
+            self.logger.warning("delete_node called on unknown node %r", key)
+            return []
+        prefix = self._node_path(node.parent) if node.parent is not None else ""
+        paths = self._collect_delete_paths(node, prefix)
+        self._detach_from_parent(node)
+        for child in node.children:
+            child.parent = None
+        del self.nodes[NodeKey(is_category, key)]
+        return paths
 
-        self._detach_from_parent(page)
-        self._unregister(page.resolved, page_path)
-        del self.nodes[NodeKey(False, page_path)]
 
-        return page.resolved or None
+    def all_paths(self) -> list[tuple[str, Optional[int]]]:
+        """Return (path, blob_mark) for all non-placeholder nodes, root-down.
+
+        Traverses from root nodes (parent=None) depth-first, passing the
+        prefix down — O(n) without any parent chain walks.
+        Categories are yielded before pages at each level.
+        """
+        roots = [n for n in self.nodes.values() if n.parent is None]
+        result = []
+        for root in sorted(roots, key=lambda n: n.name):
+            result.extend(self._collect_add_paths(root, ""))
+        return result
 
     def get_page_resolved(self, page_path: str) -> Optional[str]:
         """Return the current resolved path for a page, or None if not tracked."""
-        page = self.nodes.get(NodeKey(False, page_path))
-        return page.resolved if page else None
+        node = self.nodes.get(NodeKey(False, page_path))
+        return self._node_path(node) if node else None
 
     def get_category_resolved(self, name: str) -> Optional[str]:
         """Return the current resolved path for a category, or None if unknown."""
         node = self.nodes.get(NodeKey(True, name))
-        return node.resolved if node else None
+        return self._node_path(node) if node else None
