@@ -13,7 +13,6 @@ import attr
 
 from .users import Moin2GitUserSet
 
-
 LOG_FILE = "moin2gitwiki.log"
 FILE_FORMATTER = logging.Formatter(
     "%(asctime)s — %(name)s — %(levelname)s — %(funcName)s:%(lineno)d — %(message)s",
@@ -154,6 +153,5 @@ class Moin2GitContext:
             syslog_handler.setFormatter(SYSLOG_FORMATTER)
             logger.addHandler(syslog_handler)
         logger.addHandler(self.get_file_handler())
-
 
 # end

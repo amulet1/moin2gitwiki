@@ -13,11 +13,13 @@ from pathlib import Path
 import click
 
 from . import __version__
+
+from .appcontext import init_context
+
 from .context import Moin2GitContext
 from .gitrevision import GitExportStream
 from .moin2markdown import Moin2Markdown
 from .wikiindex import MoinEditEntries
-
 
 # -----------------------------------------------------------------------
 @click.group()
@@ -94,6 +96,7 @@ def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy, log_fi
         proxies=proxy,
         **({"log_file": log_file} if log_file is not None else {}),
     )
+    init_context(ctx.obj)
 
 
 # -----------------------------------------------------------------------
@@ -225,16 +228,31 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     """
     # cwd = Path.cwd()
     destination = Path(destination)
-    ctx.wiki_type = wiki_type
-    is_otterwiki = wiki_type.lower() == "otterwiki"
-    # each flag defaults based on wiki type if not explicitly set
-    ctx.strip_dots = strip_dots if strip_dots is not None else is_otterwiki
-    ctx.spaces_to_hyphens = spaces_to_hyphens if spaces_to_hyphens is not None else (not is_otterwiki)
-    ctx.subpages_as_dirs = subpages_as_dirs if subpages_as_dirs is not None else is_otterwiki
-    ctx.attachment_dir = attachment_dir if attachment_dir is not None else ("a" if is_otterwiki else "_attachments")
-    ctx.category_folders = category_folders
     if destination.exists():
         raise SystemExit(f"Destination path {destination} already exists.")
+
+    ctx.wiki_type = wiki_type
+
+    is_otterwiki = wiki_type.lower() == "otterwiki"
+    # each flag defaults based on wiki type if not explicitly set
+    if strip_dots is None:
+        strip_dots = is_otterwiki
+
+    if spaces_to_hyphens is None:
+        spaces_to_hyphens = not is_otterwiki
+
+    if subpages_as_dirs is None:
+        subpages_as_dirs = is_otterwiki
+
+    if attachment_dir is None:
+        attachment_dir = "a" if is_otterwiki else "_attachments"
+
+    ctx.strip_dots = strip_dots
+    ctx.spaces_to_hyphens = spaces_to_hyphens
+    ctx.subpages_as_dirs = subpages_as_dirs
+    ctx.attachment_dir = attachment_dir 
+    ctx.category_folders = category_folders
+
     #
     # build your initial revision set from the wiki data
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)

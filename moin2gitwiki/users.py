@@ -142,5 +142,4 @@ class Moin2GitUserSet:
         else:
             return self.get_user_by_id(ident)
 
-
 # end

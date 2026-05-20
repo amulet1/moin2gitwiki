@@ -11,8 +11,8 @@ where resolve(parent_category) walks up the parent chain recursively.
 category=None means the node lives at the root level.
 
 Two traversal modes used by remove_node/delete_node and add_node:
-  - _collect_delete_paths: leaves first, computes old paths from old prefix
-  - _collect_add_paths:    parent first, computes new paths from new prefix
+  - _collect_delete_paths: leaves first, computes old paths from the old prefix
+  - _collect_add_paths:    parent first, computes new paths from a new prefix
 
 Callers are responsible for:
   - sanitizing names before passing them in
@@ -24,8 +24,9 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import NamedTuple, Optional
+from typing import List, NamedTuple, Optional
+
+import attr
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ class NodeKey(NamedTuple):
 # Node
 # ---------------------------------------------------------------------------
 
-@dataclass
+@attr.s(auto_attribs=True, slots=True)
 class Node:
     """One page or category in the wiki tree.
 
@@ -62,14 +63,9 @@ class Node:
     is_category: bool
     name: str
     page_path: Optional[str] = None
-    children: list = field(default_factory=list)
+    children: List[Node] = attr.ib(factory=list)
     blob_mark: Optional[int] = None
-    parent: Optional['Node'] = field(default=None, repr=False)
-
-
-# Keep type aliases for clarity at call sites
-CategoryNode = Node
-PageNode = Node
+    parent: Optional[Node] = attr.ib(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -83,17 +79,17 @@ class CategoryTree:
 
         add_node(is_category, key, name, parent_category, blob_mark)
             -- when a page or category revision is processed.
-            Returns list of (path, blob_mark) for M commands.
+            Returns a list of (path, blob_mark) for M commands.
 
         remove_node(is_category, key)
             -- before add_node when a node is moving to a new location.
-            Soft remove: keeps node in dict with children intact for re-add.
-            Returns list of (path, blob_mark) for D commands.
+            Soft remove: keeps the node in dict with children intact for re-add.
+            Returns a list of (path, blob_mark) for D commands.
 
         delete_node(is_category, key)
             -- when a node is actually deleted or renamed away.
             Hard remove: detaches children, removes from dict.
-            Returns list of (path, blob_mark) for D commands.
+            Returns a list of (path, blob_mark) for D commands.
 
     All returned paths have no file extension — callers add one if needed.
     """
@@ -124,7 +120,7 @@ class CategoryTree:
         return self.nodes[key]
 
     def _detach_from_parent(self, node: Node):
-        """Remove node from its parent's children and clear parent pointer."""
+        """Remove the node from its parent's children and clear parent pointer."""
         if node.parent is not None:
             if node in node.parent.children:
                 node.parent.children.remove(node)
@@ -140,7 +136,7 @@ class CategoryTree:
     # ------------------------------------------------------------------
 
     def _collect_delete_paths(
-        self, node: Node, prefix: str
+            self, node: Node, prefix: str
     ) -> list[tuple[str, Optional[int]]]:
         """Collect (path, blob_mark) for subtree deletion, leaves first.
 
@@ -155,7 +151,7 @@ class CategoryTree:
         return paths
 
     def _collect_add_paths(
-        self, node: Node, prefix: str
+            self, node: Node, prefix: str
     ) -> list[tuple[str, Optional[int]]]:
         """Collect (path, blob_mark) for subtree addition, parent first.
 
@@ -179,10 +175,10 @@ class CategoryTree:
     # ------------------------------------------------------------------
 
     def placement_changed(
-        self,
-        is_category: bool,
-        key: str,
-        parent_category: Optional[str],
+            self,
+            is_category: bool,
+            key: str,
+            parent_category: Optional[str],
     ) -> bool:
         """Return True if the node exists and its parent would change.
 
@@ -196,12 +192,12 @@ class CategoryTree:
         return current_parent_name != parent_category
 
     def add_node(
-        self,
-        is_category: bool,
-        key: str,
-        name: str,
-        parent_category: Optional[str],
-        blob_mark: int,
+            self,
+            is_category: bool,
+            key: str,
+            name: str,
+            parent_category: Optional[str],
+            blob_mark: int,
     ) -> list[tuple[str, Optional[int]]]:
         """Add or update a node and return (path, blob_mark) for M commands.
 
@@ -233,9 +229,9 @@ class CategoryTree:
         return self._collect_add_paths(node, prefix)
 
     def remove_node(
-        self,
-        is_category: bool,
-        key: str,
+            self,
+            is_category: bool,
+            key: str,
     ) -> list[tuple[str, Optional[int]]]:
         """Soft-remove: detach from parent, keep in dict with children intact.
 
@@ -252,9 +248,9 @@ class CategoryTree:
         return paths
 
     def delete_node(
-        self,
-        is_category: bool,
-        key: str,
+            self,
+            is_category: bool,
+            key: str,
     ) -> list[tuple[str, Optional[int]]]:
         """Hard-remove: detach, clear children's parents, remove from dict.
 
@@ -272,7 +268,6 @@ class CategoryTree:
             child.parent = None
         del self.nodes[NodeKey(is_category, key)]
         return paths
-
 
     def all_paths(self) -> list[tuple[str, Optional[int]]]:
         """Return (path, blob_mark) for all non-placeholder nodes, root-down.

@@ -40,10 +40,10 @@ class GitExportStream:
         self.ctx.category_tree = self._category_tree
 
     def add_wiki_revision(
-        self,
-        revision: MoinEditEntry,
-        content: bytes,
-        primary_category: Optional[str] = None,
+            self,
+            revision: MoinEditEntry,
+            content: bytes,
+            primary_category: Optional[str] = None,
     ):
         """
         Add a wiki revision as a git commit
@@ -157,11 +157,11 @@ class GitExportStream:
         self._emit_commit(revision, "Update Home page", [f"M 100644 :{blob_ref} Home.md\n"])
 
     def _delete_side(
-        self,
-        revision: MoinEditEntry,
-        placement,
-        tree: CategoryTree,
-        soft: bool = False,
+            self,
+            revision: MoinEditEntry,
+            placement,
+            tree: CategoryTree,
+            soft: bool = False,
     ) -> List[str]:
         """Compute file ops for removing a page or category from the tree.
 
@@ -178,11 +178,11 @@ class GitExportStream:
         return file_ops
 
     def _add_side(
-        self,
-        placement,
-        page_path: str,
-        blob_ref: int,
-        tree: CategoryTree,
+            self,
+            placement,
+            page_path: str,
+            blob_ref: int,
+            tree: CategoryTree,
     ) -> List[str]:
         """Compute file ops for adding a page or category to the tree."""
         is_cat = placement.kind == "category"
@@ -200,10 +200,10 @@ class GitExportStream:
         return file_ops
 
     def _emit_commit(
-        self,
-        revision: MoinEditEntry,
-        description: Optional[str],
-        file_ops: List[str],
+            self,
+            revision: MoinEditEntry,
+            description: Optional[str],
+            file_ops: List[str],
     ):
         """Write a commit with the given file operations."""
         if self.last_commit_mark is None:
@@ -295,6 +295,5 @@ class GitExportStream:
         """
         self.write_string(f"reset {self.branch}\n")
         self.write_string(f"from :{self.last_commit_mark}\n")
-
 
 # end

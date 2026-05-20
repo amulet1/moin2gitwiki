@@ -1,7 +1,6 @@
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import attr
 from bs4 import BeautifulSoup
@@ -68,11 +67,11 @@ class Moin2Markdown:
 
     @classmethod
     def create_translator(
-        cls,
-        ctx,
-        cache_directory: Path,
-        url_prefix: str,
-        revisions: MoinEditEntries,
+            cls,
+            ctx,
+            cache_directory: Path,
+            url_prefix: str,
+            revisions: MoinEditEntries,
     ):
         """
         Build a translator object
@@ -209,9 +208,9 @@ class Moin2Markdown:
                             tag["href"] = new_target
                             self.ctx.logger.debug(f"Normal map -> {new_target}")
                     elif (
-                        "action" in url.query.params
-                        and "target" in url.query.params
-                        and url.query.params["action"] == "AttachFile"
+                            "action" in url.query.params
+                            and "target" in url.query.params
+                            and url.query.params["action"] == "AttachFile"
                     ):
                         attach_target = url.query.params["target"]
                         new_target = self.revisions.get_new_attachment_link_target(
@@ -240,9 +239,9 @@ class Moin2Markdown:
                         new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                         self.ctx.logger.debug(f"Image params {url.query.params}")
                         if (
-                            "action" in url.query.params
-                            and "target" in url.query.params
-                            and url.query.params["action"] == "AttachFile"
+                                "action" in url.query.params
+                                and "target" in url.query.params
+                                and url.query.params["action"] == "AttachFile"
                         ):
                             attach_target = url.query.params["target"]
                             new_target = self.revisions.get_new_attachment_link_target(
@@ -280,6 +279,5 @@ class Moin2Markdown:
         )
         (output, _) = process.communicate(input.encode("utf-8"))
         return output
-
 
 # end

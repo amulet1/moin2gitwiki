@@ -1,11 +1,14 @@
-import os
+from __future__ import annotations
+
 import re
-from typing import Any
+from typing import List
 
 import attr
 
 from .appcontext import get_context
 
+
+@attr.s(auto_attribs=True, slots=True, frozen=True)
 class PagePath:
     """Classification of a MoinMoin page for category tree placement.
 
@@ -14,20 +17,11 @@ class PagePath:
         parts:
 
     """
-    is_category: bool = attr.ib()
-    parts: list[str] = attr.ib()
+    is_category: bool
+    parts: List[str]
 
-#    @property
-#    def ctx(self):
-#        return get_context()
-
-#    @property
-#    def strip_dots(self)
-#        return self.ctx.strip_dots
-
-
-    @staticmethod
-    def moin_to_pagepath(subpages_as_dirs:bool, thing: str) -> tuple[bool, list[Any]]:
+    @classmethod
+    def from_moin_name(cls, thing: str) -> PagePath:
         """Decode MoinMoin name and convert to a page path.
 
         Processing steps:
@@ -37,9 +31,9 @@ class PagePath:
 
         Controlled by context flags:
         - ctx.spaces_to_hyphens: replace spaces with hyphens (default: True for gollum/gitea)
-        - ctx.strip_dots: remove dots                        (default: True for otterwiki)
-        - ctx.subpages_as_dirs: keep / path delimiter        (default: True for otterwiki)
-        - ctx.category_folders: use page Category as folder  (default: False)
+        - ctx.strip_dots: remove dots (default: True for otterwiki)
+        - ctx.subpages_as_dirs: keep / path delimiter (default: True for otterwiki)
+        - ctx.category_folders: use page Category as a folder (default: False)
         """
 
         # Replace characters unsafe in filenames, preserving path separators.
@@ -61,7 +55,7 @@ class PagePath:
         if ctx.strip_dots:
             unsafe_chars["."] = ""
 
-        parts = PagePath.decode_moin_name(thing).split("/")
+        parts = cls.decode_moin_name(thing).split("/")
 
         sanitized = []
         for part in parts:
@@ -77,16 +71,18 @@ class PagePath:
         is_category = False
 
         if ctx.category_folders and sanitized:
-            category = PagePath.strip_prefix(sanitized[0], "Category")
+            category = cls.strip_prefix(sanitized[0], "Category")
             if category:
+                # replace the first part with the non-empty category name
                 sanitized[0] = category
                 is_category = True
 
-        return is_category, sanitized
+        return cls(is_category, sanitized)
 
     @staticmethod
     def decode_moin_name(thing: str) -> str:
         """Decode MoinMoin hex encoded sequences e.g. (20) -> space, (2e20) -> '. ' """
+
         def decode_hex(m):
             hex_str = m.group(1)
             try:

@@ -2,8 +2,8 @@ import os
 import re
 from datetime import datetime
 from datetime import timedelta
-from enum import auto
 from enum import Enum
+from enum import auto
 from typing import NamedTuple
 from typing import Optional
 
@@ -115,12 +115,14 @@ class MoinEditEntry:
 
     def decode_moin_name(self, thing: str) -> str:
         """Decode MoinMoin hex encoded sequences e.g. (20) -> space, (2e20) -> '. ' """
+
         def decode_hex(m):
             hex_str = m.group(1)
             try:
                 return bytes.fromhex(hex_str).decode("utf-8")
             except Exception:
                 return m.group(0)
+
         return re.sub(r'\(([0-9a-fA-F]+)\)', decode_hex, thing)
 
     def sanitize_for_path(self, thing: str) -> str:
@@ -397,10 +399,10 @@ class MoinEditEntries:
                     previous_page_name = None
                     if edit_type in ("SAVENEW", "SAVE", "SAVE/REVERT"):
                         if ctx.moin_data.joinpath(
-                            "pages",
-                            page,
-                            "revisions",
-                            page_revision,
+                                "pages",
+                                page,
+                                "revisions",
+                                page_revision,
                         ).is_file():
                             ed_type = MoinEditType.PAGE
                         else:
@@ -467,6 +469,5 @@ class MoinEditEntries:
         else:
             self.ctx.logger.debug(f"Attachment no map for {link} {attachment}")
             return None
-
 
 # end

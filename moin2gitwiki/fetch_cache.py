@@ -9,11 +9,11 @@ import requests
 @attr.s(kw_only=True, slots=True)
 class FetchCache:
     """
-    Implements a local cache for URLs which can be persistant between runs
+    Implements a local cache for URLs which can be persistent between runs
 
     Basic cache directory which contains an `index.json` file with a table of
     URLs and the cache file they map to.  Has zero intelligence - assumes
-    everything can be cached for ever - which is reasonable considering the
+    everything can be cached forever - which is reasonable considering the
     things we request via the cache.
 
     Attributes:
@@ -77,7 +77,7 @@ class FetchCache:
     def fetch(self, url: str) -> str:
         """Fetch a URL, from the cache if there, otherwise put a copy into cache"""
         #
-        # is this in the cache already
+        # is this in the cache already?
         if url in self.cache_map:
             item_name = self.cache_map[url]
             item_path = self.cache_directory.joinpath(item_name)
@@ -88,7 +88,7 @@ class FetchCache:
             except OSError:
                 pass  # just move on to refetch
         #
-        # if you get here then the url is either not in the cache or we
+        # if you get here, then the url is either not in the cache or we
         # failed to retrieve it off disk - in either case we just fetch it
         item_name = uuid.uuid4().hex
         item_path = item_path = self.cache_directory.joinpath(item_name)
@@ -110,6 +110,5 @@ class FetchCache:
         #
         # return response content
         return content
-
 
 # end
