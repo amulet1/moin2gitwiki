@@ -108,7 +108,7 @@ class Node:
                 if self is node:
                     print("Skipping self")
                     sys.exit(1)
-                
+
                 node._collect_add_paths(paths, node_path + "/" + name)
 
     def collect_all_paths(self, paths: List[str], node_path: str):
@@ -239,6 +239,9 @@ class PageTree:
         Finds an existing node or creates a new one.
         Attaches to parent, computes paths for the whole subtree.
         """
+
+        print(f"add_side: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
+
         node = self.resolve_to_node(True, moin_page_name)
         assert node is not None
 
