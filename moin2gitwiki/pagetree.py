@@ -16,7 +16,6 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
-import sys
 from typing import Optional, List
 
 import attr
@@ -99,7 +98,6 @@ class Node:
         """
         print(f"Collecting add paths for {node_path}{self.children}")
         print(f"Node: {self}")
-        sys.exit(1)
 
         if self.blob_mark is not None:
             paths.append((node_path, self.blob_mark))
@@ -107,6 +105,10 @@ class Node:
         for name, node in self.children.items():
             if node.category is None:
                 print(f"{node_path}/{name}")
+                if self is node:
+                    print("Skipping self")
+                    sys.exit(1)
+                
                 node._collect_add_paths(paths, node_path + "/" + name)
 
     def collect_all_paths(self, paths: List[str], node_path: str):
