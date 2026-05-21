@@ -6,6 +6,7 @@ from datetime import datetime
 from datetime import timedelta
 from enum import Enum
 from enum import auto
+from typing import List
 
 import attr
 
@@ -84,9 +85,9 @@ class MoinEditEntries:
     A sorted collection of Moin revision entry objects
     """
 
-    entries: list = attr.ib()
-    link_table: dict = attr.ib()
-    attachment_link_table: dict = attr.ib()
+    entries: List[MoinEditEntry] = attr.ib()
+    link_table: dict[str, MoinEditEntry] = attr.ib()
+    attachment_link_table: dict[str, MoinEditEntry] = attr.ib()
     ctx = attr.ib(repr=False)
 
     @classmethod
