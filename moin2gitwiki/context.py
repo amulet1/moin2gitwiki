@@ -54,7 +54,6 @@ class Moin2GitContext:
     wiki_type: str = attr.ib(default="gollum")
     log_file: str = attr.ib(default=LOG_FILE)
     category_folders: bool = attr.ib(default=False)
-    category_tree = attr.ib(default=None)  # CategoryTree, set by GitExportStream
 
     @property
     def moin_data(self):

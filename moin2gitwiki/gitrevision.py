@@ -31,14 +31,10 @@ class GitExportStream:
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
     home_page: str = attr.ib(default="end")
+    _category_tree: PageTree = attr.ib()
 
     home_overwritten: bool = attr.ib(default=False, init=False)
-    _category_tree: PageTree = attr.ib(default=None, init=False)
     _home_check: bool = attr.ib(default=True, init=False)
-
-    def __attrs_post_init__(self):
-        self._category_tree = PageTree(logger=self.ctx.logger)
-        self.ctx.category_tree = self._category_tree
 
     def add_wiki_revision(
             self,
@@ -101,7 +97,7 @@ class GitExportStream:
         self._emit_commit(revision, description, file_ops)
 
     def _generate_home_content(self) -> str:
-        """Generate Home page content from current tree state."""
+        """Generate Home page content from the current tree state."""
         tree = self._category_tree
         current_paths = sorted(
             path for path, blob_mark in tree.all_paths()
@@ -124,7 +120,7 @@ class GitExportStream:
         return content
 
     def emit_home_page(self):
-        """Emit a commit adding or updating Home.md from current tree state."""
+        """Emit a commit adding or updating Home.md from the current tree state."""
 
         page_name = "Home"
         page = self._category_tree.resolve_to_node(True, page_name)
@@ -183,7 +179,7 @@ class GitExportStream:
 
     def write_changer(self, what: str, revision: MoinEditEntry):
         """
-        Add an author/committer entry with date
+        Add an author/committer entry with a date
 
         Parameters:
             what:       Normally either `committer` or `author`

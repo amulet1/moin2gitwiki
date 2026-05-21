@@ -145,7 +145,7 @@ class Node:
 # ---------------------------------------------------------------------------
 # CategoryTree
 # ---------------------------------------------------------------------------
-
+@attr.s(auto_attribs=True, slots=True)
 class PageTree:
     """Incremental category tree mapping MoinMoin pages to output paths.
 
@@ -167,11 +167,12 @@ class PageTree:
 
     All returned paths have no file extension — callers add one if needed.
     """
+    regular: dict[str, Node] = {}
+    categories: dict[str, Node] = {}
 
-    def __init__(self, logger: logging.Logger):
-        self.regular: dict[str, Node] = {}
-        self.categories: dict[str, Node] = {}
-        self.logger = logger
+    @property
+    def logger(self) -> logging.Logger:
+        return get_context().logger
 
     # ------------------------------------------------------------------
     # Public API

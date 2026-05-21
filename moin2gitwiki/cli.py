@@ -17,6 +17,7 @@ from .appcontext import init_context
 from .context import Moin2GitContext
 from .gitrevision import GitExportStream
 from .moin2markdown import Moin2Markdown
+from .pagetree import PageTree
 from .wikiindex import MoinEditEntries
 
 
@@ -258,6 +259,9 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     # build your initial revision set from the wiki data
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
+
+    tree = PageTree(logger=ctx.logger)
+
     #
     # build the translator
     translator = Moin2Markdown.create_translator(
@@ -265,6 +269,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
+        category_tree=tree
     )
     #
     # build the output git instance
@@ -272,7 +277,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     os.chdir(destination)
     subprocess.run(["git", "init"])
     with subprocess.Popen(["git", "fast-import"], stdin=subprocess.PIPE) as gitstream:
-        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page)
+        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page, category_tree=tree)
         with click.progressbar(revisions.entries) as entries:
             for revision in entries:
                 content, primary_category = translator.retrieve_and_translate(revision=revision)
@@ -334,6 +339,7 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
+        category_tree=None
     )
     #
     # find the page and translate it

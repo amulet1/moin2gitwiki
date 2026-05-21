@@ -1,6 +1,7 @@
 import re
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 import attr
 from bs4 import BeautifulSoup
@@ -8,6 +9,7 @@ from furl import furl
 
 from .fetch_cache import FetchCache
 from .pagepath import PagePath
+from .pagetree import PageTree
 from .wikiindex import MoinEditEntries
 from .wikiindex import MoinEditEntry
 
@@ -29,6 +31,7 @@ class Moin2Markdown:
     fetch_cache: FetchCache = attr.ib()
     url_prefix: furl = attr.ib()
     revisions: MoinEditEntries = attr.ib()
+    category_tree: Optional[PageTree] = attr.ib()
     ctx = attr.ib(repr=False)
     #
     # smiley mapping
@@ -73,6 +76,7 @@ class Moin2Markdown:
             cache_directory: Path,
             url_prefix: str,
             revisions: MoinEditEntries,
+            category_tree: Optional[PageTree]
     ):
         """
         Build a translator object
@@ -82,7 +86,7 @@ class Moin2Markdown:
             cache_directory:  Path object for the cache directory
             url_prefix:       The base URL for the MoinMoin wiki
             revisions:        MoinEditEntries object for link resolution
-
+            category_tree:
         """
         #
         # Build a fetch cache
@@ -94,6 +98,7 @@ class Moin2Markdown:
             fetch_cache=fetch_cache,
             revisions=revisions,
             url_prefix=furl(url_prefix),
+            category_tree=category_tree,
             ctx=ctx,
         )
 
