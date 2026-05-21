@@ -36,8 +36,8 @@ class Node:
     Attributes:
         name:         Stripped category name for categories (e.g. "Foo"),
                       or sanitized page name for pages (e.g. "EMail").
-        page_path:    MoinMoin filesystem page_path — stable unique key
-                      for pages. None for category nodes.
+#        page_path:    MoinMoin filesystem page_path — stable unique key
+#                      for pages. None for category nodes.
         children:     Direct child nodes.
         blob_mark:    Latest content mark — needed to re-emit the file
                       when the node moves.
@@ -45,8 +45,8 @@ class Node:
         category:     Reference to the page category or None.
     """
     name: str
-    # to be deleted
-    page_path: Optional[str] = None
+    #   # to be deleted
+    #   page_path: Optional[str] = None
 
     children: dict[str, Node] = {}
     blob_mark: Optional[int] = None
