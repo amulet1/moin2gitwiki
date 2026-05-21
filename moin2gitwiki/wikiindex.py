@@ -16,6 +16,7 @@ from .users import Moin2GitUser
 
 
 class MoinEditType(Enum):
+    NEW = auto()
     PAGE = auto()
     ATTACH = auto()
     RENAME = auto()
@@ -132,13 +133,8 @@ class MoinEditEntries:
                 else:
                     previous_page_name = None
                     if edit_type in ("SAVENEW", "SAVE", "SAVE/REVERT"):
-                        if ctx.moin_data.joinpath(
-                                "pages",
-                                page,
-                                "revisions",
-                                page_revision,
-                        ).is_file():
-                            ed_type = MoinEditType.PAGE
+                        if ctx.moin_data.joinpath("pages", page, "revisions", page_revision).is_file():
+                            ed_type = MoinEditType.NEW if edit_type == "SAVENEW" else MoinEditType.PAGE
                         else:
                             ed_type = MoinEditType.DELETE
                     elif edit_type == "ATTNEW":

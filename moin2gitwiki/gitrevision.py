@@ -78,12 +78,20 @@ class GitExportStream:
             file_ops.extend(tree.add_side(False, revision.page_name, category, blob_ref))
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
-        elif revision.edit_type == MoinEditType.PAGE:
+        elif revision.edit_type == MoinEditType.NEW:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
             file_ops = tree.add_side(True, revision.page_path, category, blob_ref)
-            description = f"Add/Update {revision.page_name}"
+            description = f"Add {revision.page_name}"
+
+        elif revision.edit_type == MoinEditType.PAGE:
+            if content is None:
+                return
+            blob_ref = self.output_blob(content)
+            file_ops = tree.add_side(False, revision.page_path, category, blob_ref)
+            description = f"Update {revision.page_name}"
+
         else:
             return
 
