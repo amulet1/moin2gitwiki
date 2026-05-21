@@ -2,7 +2,7 @@
 moin2gitwiki context object - carries state between components
 
 This contains the basic context object, which has various global
-state information in it such as the logging objects.
+state information in it, such as the logging objects.
 """
 import logging.handlers
 import sys
@@ -26,16 +26,16 @@ SYSLOG_FORMATTER = logging.Formatter("%(name)s: [%(levelname)s] %(message)s")
 @attr.s(kw_only=True, slots=True)
 class Moin2GitContext:
     """
-    Moin2GitContext Context Object - holds state, logging, etc
+    Moin2GitContext Context Object - holds state, logging, etc.
 
     Called from the cli code.  Sets up all the common requirements.
 
     Attributes:
-        debug:      if true we output more debugging chatter
-        verbose:    if true we output more progress information
-        syslog:     if true we additionally log to syslog at debug level
+        debug:      if true, we output more debugging chatter
+        verbose:    if true, we output more progress information
+        syslog:     if true, we additionally log to syslog at debug level
         logger:     Logging object
-        moin_data:  Path of the MoinMoin data directory
+        _moin_data: Path of the MoinMoin data directory
         users:      Moin user set object
 
     """

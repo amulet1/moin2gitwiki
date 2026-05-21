@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from furl import furl
 
 from .fetch_cache import FetchCache
+from .pagepath import PagePath
 from .wikiindex import MoinEditEntries
 from .wikiindex import MoinEditEntry
 
@@ -20,7 +21,7 @@ class Moin2Markdown:
         fetch_cache:    A FetchCache object used to retrieve URLs
         url_prefix:     The URL prefix of the Moin wiki web presence
         revisions:      MoinEditEntries object for link resolution
-        ctx:            Context object - logger and user mapping etc
+        ctx:            Context object - logger and user mapping etc.
     """
 
     #
@@ -77,7 +78,7 @@ class Moin2Markdown:
         Build a translator object
 
         Parameters:
-            ctx:              Context object (logger etc)
+            ctx:              Context object (logger etc.)
             cache_directory:  Path object for the cache directory
             url_prefix:       The base URL for the MoinMoin wiki
             revisions:        MoinEditEntries object for link resolution
@@ -98,7 +99,7 @@ class Moin2Markdown:
 
     def retrieve_and_translate(self, revision: MoinEditEntry, skip=None):
         """
-        Retrieve a wiki revision, and translate it to markdown
+        Retrieve a wiki revision and translate it to Markdown
 
         Parameters:
             revision:    The wiki revision object for the revision we want
@@ -106,24 +107,26 @@ class Moin2Markdown:
                          avoidance on category pages), or None
 
         Returns a tuple (content, primary_category) where content is the
-        translated markdown bytes (or None if the revision has no content),
+        translated Markdown bytes (or None if the revision has no content),
         and primary_category is the detected primary category name (or None).
         """
         if not revision.wiki_content_path().is_file():
             return None, None
+
         target = self.url_prefix.copy()
-        target /= revision.page_path_unescaped()
+        target /= PagePath.moin_name_to_link(revision.page_path)
         target.args["action"] = "recall"
         target.args["rev"] = revision.page_revision
         content = self.fetch_cache.fetch(target.url)
         main_content, primary_category = self.extract_content_section(content, skip=skip)
         translated = self.translate(main_content)
-        # when category-folders is enabled, replace CategoryXxx with Xxx
+
+        # when category-folders mode is enabled, replace CategoryXxx with Xxx
         # for all known categories so converted pages use clean names
         if self.ctx.category_folders:
             tree = self.ctx.category_tree
             if tree is not None:
-                for node in tree.nodes.values():
+                for node in tree.pages.values():
                     if node.is_category:
                         translated = translated.replace(
                             f"Category{node.name}".encode(),
@@ -156,13 +159,13 @@ class Moin2Markdown:
         #
         # Single pass over all tags — handle each by type.
         # lxml correctly isolates unclosed <p> tags so each paragraph contains
-        # only its own children; depth-first order means parent is visited
+        # only its own children; depth-first order means a parent is visited
         # before its children.
         #
         # Category detection: track the current linemark <p> object so that
         # tag.parent is current_linemark_p correctly identifies direct children
         # of a linemark paragraph. Category links must be direct children of a
-        # linemark paragraph — nested links (e.g. inside <strong>) are ignored.
+        # linemark paragraph — nested links (e.g., inside <strong>) are ignored.
         last_category = None
         current_p_category = None
         current_linemark_p = None
@@ -178,10 +181,9 @@ class Moin2Markdown:
                     del tag["class"]
                 else:
                     current_linemark_p = None
-
-            elif tag.name == "span" and "anchor" in tag.get("class", []):
-                tag.decompose()
-
+            elif tag.name == "span":
+                if "anchor" in tag.get("class", []):
+                    tag.decompose()
             elif tag.name == "a":
                 if not tag.get("href"):
                     continue
@@ -192,6 +194,7 @@ class Moin2Markdown:
                 except ValueError:
                     self.ctx.logger.debug(f"Skipping invalid link {target}")
                     continue
+
                 if url.url.startswith(self.url_prefix.url):
                     new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                     if len(str(url.query)) == 0:
@@ -202,6 +205,7 @@ class Moin2Markdown:
                             if not (skip and cat_name.split("/", 1)[0] == skip):
                                 if current_p_category is None:
                                     current_p_category = cat_name
+
                         # conventional link — rewrite or strip
                         new_target = self.revisions.get_new_link_target(new_url)
                         if new_target:
@@ -222,9 +226,9 @@ class Moin2Markdown:
                     else:
                         tag.unwrap()
                         continue  # tag detached — skip class strip
+
                 if tag.has_attr("class"):
                     del tag["class"]
-
             elif tag.name == "img":
                 if not tag.get("src"):
                     continue
@@ -254,13 +258,10 @@ class Moin2Markdown:
                         self.ctx.logger.debug(f"Not mapped - {url.query.params}")
                 if tag.has_attr("class"):
                     del tag["class"]
-
             elif tag.name == "form":
                 tag.unwrap()
-
             elif tag.name == "input":
                 tag.decompose()
-
             elif tag.name == "div":
                 tag.unwrap()
 
@@ -271,7 +272,7 @@ class Moin2Markdown:
         return "".join([str(x) for x in content.contents]), last_category
 
     def translate(self, input: str) -> bytes:
-        """Translate HTML to Github Flavoured Markdown using pandoc"""
+        """Translate HTML to GitHub Flavored Markdown using pandoc"""
         process = subprocess.Popen(
             ["pandoc", "-f", "html", "-t", "gfm"],
             stdin=subprocess.PIPE,

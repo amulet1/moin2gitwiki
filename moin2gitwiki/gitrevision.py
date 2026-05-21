@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import attr
 
-from .categorytree import CategoryTree
+from .pagetree import PageTree
 from .wikiindex import MoinEditEntry
 from .wikiindex import MoinEditType
 
@@ -31,86 +31,72 @@ class GitExportStream:
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
     home_page: str = attr.ib(default="end")
-    _category_tree: CategoryTree = attr.ib(default=None, init=False)
-    _home_exists: bool = attr.ib(default=False, init=False)
+
     home_overwritten: bool = attr.ib(default=False, init=False)
+    _category_tree: PageTree = attr.ib(default=None, init=False)
+    _home_check: bool = attr.ib(default=True, init=False)
 
     def __attrs_post_init__(self):
-        self._category_tree = CategoryTree(logger=self.ctx.logger)
+        self._category_tree = PageTree(logger=self.ctx.logger)
         self.ctx.category_tree = self._category_tree
 
     def add_wiki_revision(
             self,
             revision: MoinEditEntry,
             content: bytes,
-            primary_category: Optional[str] = None,
+            category: Optional[str] = None,
     ):
         """
         Add a wiki revision as a git commit
 
         Parameters:
-            revision:          A wiki revision object
-            content:           The content of the wiki object, after translation, as bytes
-            primary_category:  Primary category detected from HTML content, or None
-
+            revision: A wiki revision object
+            content:  The content of the wiki object, after translation, as bytes
+            category: Primary category detected from HTML content, or None
         """
-        category_folders = self.ctx.category_folders
-        if category_folders:
-            np = revision.name_placement()
-            placement = revision.category_placement(np=np, primary_category=primary_category)
-            prev_placement = revision.prev_category_placement()
-        else:
-            placement = revision.plain_placement()
-            prev_placement = revision.prev_plain_placement()
-
         tree = self._category_tree
-        file_ops: List[str] = []
-        description: Optional[str] = None
+        description: Optional[str]
 
         if revision.edit_type == MoinEditType.ATTACH:
             blob_ref = self.output_blob(revision.attachment_content_bytes())
-            dest = revision.attachment_destination()
-            file_ops.append(f"M 100644 :{blob_ref} {dest}\n")
-            description = f"Attach {revision.attachment} to {placement.page_name}"
+            dest = tree.attachment_destination(revision.page_name, revision.attachment)
+            file_ops = [f"M 100644 :{blob_ref} {dest}\n"]
+            description = f"Attach {revision.attachment} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.DELETE:
-            file_ops.extend(self._delete_side(revision, placement, tree))
-            description = f"Delete {placement.category_name or placement.page_name}"
+            file_ops = tree.delete_side(revision.page_path)
+            description = f"Delete {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.RENAME:
             if content is None:
+                # TODO: warning
                 return
             blob_ref = self.output_blob(content)
-            if prev_placement.page_name or prev_placement.category_name:
-                file_ops.extend(self._delete_side(revision, prev_placement, tree))
-            file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
-            description = f"Rename to {placement.category_name or placement.page_name}"
+            file_ops = []
+
+            if revision.previous_page_name is not None:
+                file_ops.extend(tree.delete_side(revision.previous_page_name))
+
+            file_ops.extend(tree.add_side(False, revision.page_name, category, blob_ref))
+            description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            is_cat = placement.kind == "category"
-            key = placement.category_name if is_cat else revision.page_path
-            if tree.placement_changed(is_cat, key, placement.parent_category):
-                file_ops.extend(self._delete_side(revision, placement, tree, soft=True))
-            file_ops.extend(self._add_side(placement, revision.page_path, blob_ref, tree))
-            description = f"Add/Update {placement.category_name or placement.page_name}"
+            file_ops = tree.add_side(True, revision.page_path, category, blob_ref)
+            description = f"Add/Update {revision.page_name}"
+        else:
+            return
 
         if not file_ops:
             return
-
-        # track if a real Home page exists in the wiki
-        if placement.page_name == "Home" and placement.parent_category is None:
-            self._home_exists = True
 
         # in incremental mode, update Home.md as part of this commit
         if self.home_page == "incremental" and revision.edit_type != MoinEditType.ATTACH:
             home_content = self._generate_home_content().encode("utf-8")
             home_blob = self.output_blob(home_content)
             file_ops.append(f"M 100644 :{home_blob} Home.md\n")
-            if self._home_exists:
-                self.home_overwritten = True
 
         self._emit_commit(revision, description, file_ops)
 
@@ -139,10 +125,23 @@ class GitExportStream:
 
     def emit_home_page(self):
         """Emit a commit adding or updating Home.md from current tree state."""
+
+        page_name = "Home"
+        page = self._category_tree.resolve_to_node(True, page_name)
+        assert page is not None
+
+        # track if a real Home page exists in the wiki
+        if self._home_check:
+            self._home_check = False
+            if page.exists:
+                self.home_overwritten = True
+
         content = self._generate_home_content().encode("utf-8")
         blob_ref = self.output_blob(content)
-        if self._home_exists:
-            self.home_overwritten = True
+
+        # TODO: use add_side()
+        # TODO: time for incremental Home should come from the current revision?
+
         revision = MoinEditEntry(
             edit_date=datetime.now(),
             page_revision="1",
@@ -154,50 +153,8 @@ class GitExportStream:
             user=self.ctx.users.get_user_by_id_or_anonymous("0"),
             ctx=self.ctx,
         )
+
         self._emit_commit(revision, "Update Home page", [f"M 100644 :{blob_ref} Home.md\n"])
-
-    def _delete_side(
-            self,
-            revision: MoinEditEntry,
-            placement,
-            tree: CategoryTree,
-            soft: bool = False,
-    ) -> List[str]:
-        """Compute file ops for removing a page or category from the tree.
-
-        soft=True: remove_node (node stays in dict, children intact for re-add).
-        soft=False: delete_node (node removed from dict, children detached).
-        """
-        is_cat = placement.kind == "category"
-        key = placement.category_name if is_cat else revision.page_path
-        paths = tree.remove_node(is_cat, key) if soft else tree.delete_node(is_cat, key)
-        file_ops: List[str] = []
-        for path, blob_mark in paths:
-            if path:
-                file_ops.append(f"D {path}.md\n")
-        return file_ops
-
-    def _add_side(
-            self,
-            placement,
-            page_path: str,
-            blob_ref: int,
-            tree: CategoryTree,
-    ) -> List[str]:
-        """Compute file ops for adding a page or category to the tree."""
-        is_cat = placement.kind == "category"
-        key = placement.category_name if is_cat else page_path
-        name = placement.category_name if is_cat else placement.page_name
-        paths = tree.add_node(
-            is_cat, key, name,
-            placement.parent_category,
-            blob_ref,
-        )
-        file_ops: List[str] = []
-        for path, blob_mark in paths:
-            if blob_mark is not None:
-                file_ops.append(f"M 100644 :{blob_mark} {path}.md\n")
-        return file_ops
 
     def _emit_commit(
             self,

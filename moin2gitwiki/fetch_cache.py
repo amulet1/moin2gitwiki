@@ -11,7 +11,7 @@ class FetchCache:
     """
     Implements a local cache for URLs which can be persistent between runs
 
-    Basic cache directory which contains an `index.json` file with a table of
+    Basic cache directory that contains an `index.json` file with a table of
     URLs and the cache file they map to.  Has zero intelligence - assumes
     everything can be cached forever - which is reasonable considering the
     things we request via the cache.
@@ -20,7 +20,7 @@ class FetchCache:
         cache_directory:    Path of the cache directory
         index_path:         Path of the cache index file - normally `index.json` within `cache_directory`
         cache_map:          The dict mapping URLs to filenames within the cache
-        ctx:                Context object (used for logging etc)
+        ctx:                Context object (used for logging etc.)
 
     """
 
@@ -45,12 +45,10 @@ class FetchCache:
         #
         # load the index should it exist
         index_path = cache_directory.joinpath("index.json")
-        cache_map = {}
         try:
             cache_map = json.loads(index_path.read_text())
         except (OSError, ValueError):
-            # if anything goes wrong then we just ignore it and
-            # write out a blank cache file
+            # if anything goes wrong, then we just ignore it and write out a blank cache file
             cache_map = {}
             cls.write_index(index_path=index_path, cache_map=cache_map)
         #
@@ -91,7 +89,7 @@ class FetchCache:
         # if you get here, then the url is either not in the cache or we
         # failed to retrieve it off disk - in either case we just fetch it
         item_name = uuid.uuid4().hex
-        item_path = item_path = self.cache_directory.joinpath(item_name)
+        item_path = self.cache_directory.joinpath(item_name)
         self.ctx.logger.debug(f"Fetching {url}")
         try:
             response = requests.get(url, proxies=self.ctx.proxies)

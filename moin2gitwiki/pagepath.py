@@ -98,3 +98,7 @@ class PagePath:
             return text.removeprefix(prefix).strip()
 
         return ""
+
+    @classmethod
+    def moin_name_to_link(cls, thing: str) -> str:
+        return cls.decode_moin_name(thing)
