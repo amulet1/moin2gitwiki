@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 from datetime import datetime
@@ -88,7 +90,7 @@ class MoinEditEntries:
     ctx = attr.ib(repr=False)
 
     @classmethod
-    def create_edit_entries(cls, ctx):
+    def create_edit_entries(cls, ctx) -> MoinEditEntries:
         pages_dir = os.path.join(ctx.moin_data, "pages")
         pages = os.listdir(pages_dir)
         epoch = datetime(1970, 1, 1)
