@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Optional
 
 import attr
 
@@ -19,6 +19,13 @@ class PagePath:
     """
     is_category: bool
     parts: List[str]
+
+    @property
+    def category_name(self) -> Optional[str]:
+        if self.is_category:
+            return self.parts[0]
+
+        return None
 
     @classmethod
     def from_moin_name(cls, thing: str) -> PagePath:
