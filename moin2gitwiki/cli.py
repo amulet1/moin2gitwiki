@@ -260,7 +260,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
 
-    tree = PageTree(logger=ctx.logger)
+    tree = PageTree()
 
     #
     # build the translator
