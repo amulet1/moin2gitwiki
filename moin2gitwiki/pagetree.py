@@ -212,15 +212,16 @@ class PageTree:
         node = None
         parent = None
 
-        for part in path.parts:
-            node = nodes.get(part)
+        for name in path.parts:
+            node = nodes.get(name)
             if node is None:
                 if not create:
                     break
 
                 # create new node
-                node = Node(name=part, parent=parent, category=None)
-                nodes[part] = node
+                print(f"Creating missing node {name} for {parent.name if parent else '[root]'}")
+                node = Node(name=name, parent=parent, category=None)
+                nodes[name] = node
 
             parent = node
             nodes = node.children
