@@ -86,6 +86,7 @@ class Node:
         """
         for name, child in self.children.items():
             if child.category is None:
+                print("{node_path}/{name}")
                 child._collect_delete_paths(paths, node_path + "/" + name)
 
         if self.blob_mark is not None:
