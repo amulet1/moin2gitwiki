@@ -86,7 +86,7 @@ class Node:
         """
         for name, child in self.children.items():
             if child.category is None:
-                print("{node_path}/{name}")
+                print(f"{node_path}/{name}")
                 child._collect_delete_paths(paths, node_path + "/" + name)
 
         if self.blob_mark is not None:
@@ -101,7 +101,7 @@ class Node:
 
         for name, node in self.children.items():
             if node.category is None:
-                print("{node_path}/{name}")
+                print(f"{node_path}/{name}")
                 node._collect_add_paths(paths, node_path + "/" + name)
 
     def collect_all_paths(self, paths: List[str], node_path: str):
