@@ -97,14 +97,12 @@ class Moin2Markdown:
             ctx=ctx,
         )
 
-    def retrieve_and_translate(self, revision: MoinEditEntry, skip=None):
+    def retrieve_and_translate(self, revision: MoinEditEntry):
         """
         Retrieve a wiki revision and translate it to Markdown
 
         Parameters:
             revision:    The wiki revision object for the revision we want
-            skip:        Category name to skip during detection (for self-reference
-                         avoidance on category pages), or None
 
         Returns a tuple (content, primary_category) where content is the
         translated Markdown bytes (or None if the revision has no content),
@@ -118,7 +116,10 @@ class Moin2Markdown:
         target.args["action"] = "recall"
         target.args["rev"] = revision.page_revision
         content = self.fetch_cache.fetch(target.url)
-        main_content, primary_category = self.extract_content_section(content, skip=skip)
+
+        page = PagePath.from_moin_name(revision.page_name)
+        main_content, primary_category = self.extract_content_section(content, skip=page.category_name)
+
         translated = self.translate(main_content)
 
         # when category-folders mode is enabled, replace CategoryXxx with Xxx

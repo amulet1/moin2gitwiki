@@ -17,7 +17,6 @@ from .appcontext import init_context
 from .context import Moin2GitContext
 from .gitrevision import GitExportStream
 from .moin2markdown import Moin2Markdown
-from .pagepath import PagePath
 from .wikiindex import MoinEditEntries
 
 
@@ -276,11 +275,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page)
         with click.progressbar(revisions.entries) as entries:
             for revision in entries:
-                page = PagePath.from_moin_name(revision.page_name)
-                skip = page.category_name
-                content, primary_category = translator.retrieve_and_translate(
-                    revision=revision, skip=skip,
-                )
+                content, primary_category = translator.retrieve_and_translate(revision=revision)
                 export.add_wiki_revision(
                     revision=revision,
                     content=content,
@@ -344,10 +339,7 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     # find the page and translate it
     for revision in revisions.entries:
         if revision.page_name == page and int(revision.page_revision) == version:
-            np = revision.name_placement()
-            content, _ = translator.retrieve_and_translate(
-                revision=revision, skip=np.category_name,
-            )
+            content, _ = translator.retrieve_and_translate(revision=revision)
             print(content.decode("utf-8"))
             break
     else:
