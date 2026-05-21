@@ -130,7 +130,7 @@ class Moin2Markdown:
         # when category-folders mode is enabled, replace CategoryXxx with Xxx
         # for all known categories so converted pages use clean names
         if self.ctx.category_folders:
-            tree = self.ctx.category_tree
+            tree = self.category_tree
             if tree is not None:
                 for node in tree.pages.values():
                     if node.is_category:
