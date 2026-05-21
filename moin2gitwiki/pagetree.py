@@ -96,6 +96,9 @@ class Node:
         """Collect (path, blob_mark) for subtree addition, leaves last.
 
         """
+        print(f"Collecting add paths for {self.children}")
+        sys.exit(1)
+
         if self.blob_mark is not None:
             paths.append((node_path, self.blob_mark))
 
