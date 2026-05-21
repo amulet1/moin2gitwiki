@@ -53,6 +53,8 @@ class GitExportStream:
         tree = self._category_tree
         description: Optional[str]
 
+        print(f"add_wiki_revision: {revision.edit_type} {revision.page_name} {category}")
+
         if revision.edit_type == MoinEditType.ATTACH:
             blob_ref = self.output_blob(revision.attachment_content_bytes())
             dest = tree.attachment_destination(revision.page_name, revision.attachment)
