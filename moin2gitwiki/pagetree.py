@@ -321,6 +321,6 @@ class PageTree:
 
         path = page.get_path()
 
-        self.logger.warning("markdown_page_name: name=%r path=%r", moin_page_name, path)
+        ### self.logger.warning("markdown_page_name: name=%r path=%r", moin_page_name, path)
 
         return path
