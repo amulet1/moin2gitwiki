@@ -270,7 +270,8 @@ class PageTree:
 
         return file_ops
 
-    def attachment_destination(self, moin_page_name: str, attachment: str) -> str:
+    # FIXME
+    def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
         """The new pathname of the attachment file.
 
         Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
@@ -289,10 +290,25 @@ class PageTree:
 
         page = self.resolve_to_node(False, moin_page_name)
         if page is None:
-            raise ValueError(f"No page node for {moin_page_name}")
-        else:
-            decoded_page = page.get_path()
-            if ctx.subpages_as_dirs:
-                return decoded_page + "/" + attachment_dir + "/" + attachment
+            self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
+            return None
 
-            return attachment_dir + "/" + decoded_page + "/" + attachment
+        decoded_page = page.get_path()
+        if ctx.subpages_as_dirs:
+            return decoded_page + "/" + attachment_dir + "/" + attachment
+
+        return attachment_dir + "/" + decoded_page + "/" + attachment
+
+    # FIXME
+    def markdown_page_name(self, moin_page_name: str) -> Optional[str]:
+        """Page name translated, using a category-resolved path when available"""
+        page = self.resolve_to_node(True, moin_page_name)
+        if page is None:
+            self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
+            return None
+
+        path = page.get_path()
+
+        self.logger.warning("markdown_page_name: name=%r path=%r", moin_page_name, path)
+
+        return path

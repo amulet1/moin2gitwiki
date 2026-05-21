@@ -11,6 +11,7 @@ from typing import List
 import attr
 
 from .pagepath import PagePath
+from .pagetree import PageTree
 from .users import Moin2GitUser
 
 
@@ -86,8 +87,9 @@ class MoinEditEntries:
     """
 
     entries: List[MoinEditEntry] = attr.ib()
-    link_table: dict[str, MoinEditEntry] = attr.ib()
+    link_table: dict[str, str] = attr.ib()
     attachment_link_table: dict[str, MoinEditEntry] = attr.ib()
+    category_tree: PageTree = attr.ib()
     ctx = attr.ib(repr=False)
 
     @classmethod
@@ -97,6 +99,8 @@ class MoinEditEntries:
         epoch = datetime(1970, 1, 1)
         attachment_link_table = {}
         link_table = {}
+
+        tree = PageTree()
 
         entries = []
         for page in pages:
@@ -172,7 +176,7 @@ class MoinEditEntries:
 
                 # TODO: Eliminate?
                 key = PagePath.moin_name_to_link(entry.page_name)
-                link_table[key] = entry
+                link_table[key] = page_name
 
                 # TODO: Eliminate?
                 if ed_type == MoinEditType.ATTACH:
@@ -190,26 +194,34 @@ class MoinEditEntries:
             entries=entries,
             link_table=link_table,
             attachment_link_table=attachment_link_table,
+            category_tree=tree,
             ctx=ctx,
         )
 
     def count(self) -> int:
         return len(self.entries)
 
+    # FIXME
     def get_new_link_target(self, link):
-        if link in self.link_table:
-            return self.link_table[link].markdown_page_name()
-        else:
-            return None
+        # FIXME: Eliminate link_table
+        page_name = self.link_table.get(link)
+        if page_name:
+            # FIXME
+            return self.category_tree.markdown_page_name(page_name)
 
+        return None
+
+    # FIXME
     def get_new_attachment_link_target(self, link, attachment):
         key = "\t".join([link, attachment])
-        if key in self.attachment_link_table:
-            destination = self.attachment_link_table[key].attachment_destination()
-            self.ctx.logger.debug(f"Attachment {link} {attachment} -> {destination}")
-            return destination
-        else:
-            self.ctx.logger.debug(f"Attachment no map for {link} {attachment}")
-            return None
+        revision = self.attachment_link_table.get(key)
+        if revision:
+            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
+            if destination:
+                self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
+                return destination
+
+        self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
+        return None
 
 # end
