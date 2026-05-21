@@ -16,6 +16,7 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Optional, List
 
 import attr
