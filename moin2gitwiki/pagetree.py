@@ -137,9 +137,8 @@ class Node:
         paths = []
         self._collect_delete_paths(paths, node_prefix)
 
-        for path, blob_mark in paths:
-            if path:
-                file_ops.append(f"D {path}.md\n")
+        for path in paths:
+            file_ops.append(f"D {path}.md\n")
 
 
 # ---------------------------------------------------------------------------
