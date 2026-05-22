@@ -16,7 +16,7 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import attr
 
@@ -202,7 +202,7 @@ class PageTree:
 
         return paths
 
-    def resolve_to_node(self, create: bool, moin_page_name: str) -> Optional[Node]:
+    def resolve_to_node(self, create: bool, moin_page_name: str) -> Tuple[Optional[Node], Optional[dict[str, Node]]]:
         """Walk up the tree to the node for the path, creating missing nodes if requested.
 
         """
@@ -216,7 +216,7 @@ class PageTree:
             node = nodes.get(name)
             if node is None:
                 if not create:
-                    break
+                    return None, None
 
                 # create new node
                 print(f"Creating missing node {name} for {parent.name if parent else '[root]'}")
@@ -226,7 +226,7 @@ class PageTree:
             parent = node
             nodes = node.children
 
-        return node
+        return node, nodes
 
     def add_side(
             self,
@@ -243,10 +243,10 @@ class PageTree:
 
         print(f"add_side: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
 
-        node = self.resolve_to_node(True, moin_page_name)
+        node, _ = self.resolve_to_node(True, moin_page_name)
         assert node is not None
 
-        category = self.resolve_to_node(True, moin_category_name) if moin_category_name else None
+        category, _ = self.resolve_to_node(True, moin_category_name) if moin_category_name else None
 
         file_ops: List[str] = []
 
@@ -270,15 +270,25 @@ class PageTree:
         return file_ops
 
     def delete_side(self, moin_page_name: str) -> List[str]:
-        node = self.resolve_to_node(False, moin_page_name)
+        node, nodes = self.resolve_to_node(False, moin_page_name)
 
         file_ops: List[str] = []
 
         if node is None:
             self.logger.warning("delete_node: page does not exist (name=%r)", moin_page_name)
         else:
-            node.add_delete_ops(file_ops)
-            # TODO: Actually delete!
+            if node.category is not None:
+                node.add_delete_ops(file_ops)
+
+                # mark node as deleted
+                node.category = None
+                node.blob_mark = None
+                node.add_add_ops(file_ops)
+
+            if not node.children:
+                # no children, we can delete the node
+                del nodes[node.name]
+                node.parent = None
 
         return file_ops
 
