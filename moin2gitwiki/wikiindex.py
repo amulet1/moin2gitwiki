@@ -221,10 +221,12 @@ class MoinEditEntries:
 
     # FIXME
     def get_new_attachment_link_target(self, link, attachment):
+        print(f"get_new_attachment_link_target: {link} {attachment}")
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
+            # use current page path (MoinMoin shows old revisions under current page name)
+            destination = self.category_tree.attachment_destination(revision.page_path, revision.attachment)
             if destination:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
