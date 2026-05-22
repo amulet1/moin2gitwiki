@@ -299,6 +299,10 @@ class PageTree:
 
                 # unlink node
                 node.parent = None
+
+                if parent is None:
+                    break
+
                 node = parent
 
         return file_ops
