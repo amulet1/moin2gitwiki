@@ -51,19 +51,35 @@ class Node:
     def exists(self) -> bool:
         return self.blob_mark is not None
 
+    def dump(self, indent: int = 0) -> List[str]:
+        prefix = "  " * indent
+
+        result = [
+            f"{prefix}- {self.name}: {self.blob_mark}",
+            f"{prefix}    n: {self.get_path(False)}",
+            f"{prefix}    p: {self.get_path(True)}"
+        ]
+        if self.category:
+            result.append(f"{prefix}    c: {self.category.get_path(False)}")
+
+        for child in sorted(self.children.values(), key=lambda n: n.name):
+            result.extend(child.dump(indent + 1))
+
+        return result
+
     # ------------------------------------------------------------------
     # Path computation
     # ------------------------------------------------------------------
 
-    def get_path(self) -> str:
+    def get_path(self, use_category: bool = True) -> str:
         """Compute the full path for a node by walking up the parent chain."""
 
         node = self
 
         parts: list = []
-        while node:
+        while node is not None:
             parts.append(node.name)
-            if node.category:
+            if use_category and node.category:
                 node = node.category
             else:
                 node = node.parent
@@ -176,6 +192,22 @@ class PageTree:
     @property
     def logger(self) -> logging.Logger:
         return get_context().logger
+
+    def __str__(self) -> str:
+        lines = []
+
+        lines.append("Regular pages:")
+
+        for node in sorted(self.regular.values(), key=lambda n: n.name):
+            lines.extend(node.dump(1))
+
+        lines.append("")
+        lines.append("Categories:")
+
+        for node in sorted(self.categories.values(), key=lambda n: n.name):
+            lines.extend(node.dump(1))
+
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Public API
@@ -328,6 +360,8 @@ class PageTree:
         page, _ = self.resolve_to_node(False, moin_page_name)
         if page is None:
             self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
+            # FIXME
+            print(self)
             return None
 
         path = page.get_path()
