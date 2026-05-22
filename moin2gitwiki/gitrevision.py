@@ -54,7 +54,7 @@ class GitExportStream:
         description: Optional[str]
 
         print(
-            f"add_wiki_revision: type={revision.edit_type.name} name={revision.page_name} category={category} prev={revision.previous_page_name}")
+            f"add_wiki_revision: type={revision.edit_type.name} name={revision.page_name} revision={revision.page_revision} category={category} prev={revision.previous_page_name}")
 
         if revision.edit_type == MoinEditType.ATTACH:
             blob_ref = self.output_blob(revision.attachment_content_bytes())
