@@ -176,8 +176,13 @@ class MoinEditEntries:
 
                 # TODO: Eliminate?
                 if ed_type == MoinEditType.ATTACH:
-                    key = "\t".join([PagePath.moin_name_to_link(page_name), attachment])
+                    # use current page path (MoinMoin shows old revisions under current page name)
+                    # if same name attachment was modified multiple times only most recent addition will be captured
+                    # key = "\t".join([PagePath.moin_name_to_link(page_name), attachment])
+                    key = "\t".join([PagePath.moin_name_to_link(page), attachment])
                     attachment_link_table[key] = entry
+
+                # TODO: Handle attachment deletions
 
                 previous_page_name = page_name
 
@@ -204,6 +209,9 @@ class MoinEditEntries:
         if page_name:
             # FIXME
             return self.category_tree.markdown_page_name(page_name)
+
+        # FIXME:
+        print(f"WARNING: No link map for {link}")
 
         return None
 
