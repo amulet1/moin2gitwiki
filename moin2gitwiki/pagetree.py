@@ -96,8 +96,8 @@ class Node:
         """Collect path for subtree deletion, leaves first.
 
         """
-        print(f"Collecting delete paths for {node_path}{self.children}")
-        print(f"Node: {self}")
+        print(f"Collecting delete paths for {node_path}")
+        print(self.dump(1))
 
         for name, child in self.children.items():
             if child.category is None:
@@ -111,8 +111,8 @@ class Node:
         """Collect (path, blob_mark) for subtree addition, leaves last.
 
         """
-        print(f"Collecting add paths for {node_path}{self.children}")
-        print(f"Node: {self}")
+        print(f"Collecting add paths for {node_path}")
+        print(self.dump(1))
 
         if self.blob_mark is not None:
             paths.append((node_path, self.blob_mark))
