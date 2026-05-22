@@ -134,7 +134,7 @@ class GitExportStream:
         """Emit a commit adding or updating Home.md from the current tree state."""
 
         page_name = "Home"
-        page = self._category_tree.resolve_to_node(True, page_name)
+        page, _ = self._category_tree.resolve_to_node(True, page_name)
         assert page is not None
 
         # track if a real Home page exists in the wiki

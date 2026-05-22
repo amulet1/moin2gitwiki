@@ -313,7 +313,7 @@ class PageTree:
         # TODO: Check if it starts with "/"
         attachment_dir = ctx.attachment_dir
 
-        page = self.resolve_to_node(False, moin_page_name)
+        page, _ = self.resolve_to_node(False, moin_page_name)
         if page is None:
             self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
             return None
@@ -327,7 +327,7 @@ class PageTree:
     # FIXME
     def markdown_page_name(self, moin_page_name: str) -> Optional[str]:
         """Page name translated, using a category-resolved path when available"""
-        page = self.resolve_to_node(True, moin_page_name)
+        page, _ = self.resolve_to_node(True, moin_page_name)
         if page is None:
             self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
             return None
