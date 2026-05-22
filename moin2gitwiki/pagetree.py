@@ -285,10 +285,12 @@ class PageTree:
             # page does not exist
             if not new:
                 self.logger.warning("add_node: page expected to exist (name=%r)", moin_page_name)
+                print(self)
         else:
             # existing page
             if new:
                 self.logger.warning("add_node: page already exists (name=%r)", moin_page_name)
+                print(self)
 
         if category is not node.category:
             # category changed, delete page it and uncategorized children
