@@ -57,8 +57,11 @@ class GitExportStream:
             f"add_wiki_revision: type={revision.edit_type.name} path={revision.page_path} name={revision.page_name} revision={revision.page_revision} category={category} prev={revision.previous_page_name}")
 
         if revision.edit_type == MoinEditType.ATTACH:
+            dest = tree.attachment_destination(1, revision.page_name, revision.attachment)
+            if not dest:
+                return
+
             blob_ref = self.output_blob(revision.attachment_content_bytes())
-            dest = tree.attachment_destination(revision.page_name, revision.attachment)
             file_ops = [f"M 100644 :{blob_ref} {dest}\n"]
             description = f"Attach {revision.attachment} to {revision.page_name}"
 

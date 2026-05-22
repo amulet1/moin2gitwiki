@@ -225,8 +225,7 @@ class MoinEditEntries:
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            # use current page path (MoinMoin shows old revisions under current page name)
-            destination = self.category_tree.attachment_destination(revision.page_path, revision.attachment)
+            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
             if destination:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination

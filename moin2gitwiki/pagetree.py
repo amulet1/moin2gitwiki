@@ -43,6 +43,7 @@ class Node:
     """
     name: str
     blob_mark: Optional[int] = None
+    attachments: Optional[List[str]] = None
     children: Dict[str, Node] = attr.Factory(dict)
     parent: Optional[Node] = attr.ib(repr=False, default=None)
     category: Optional[Node] = attr.ib(repr=False, default=None)
@@ -340,22 +341,17 @@ class PageTree:
         return file_ops
 
     # FIXME
-    def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
+    def attachment_destination(self, mode: int, moin_page_name: str, attachment: str) -> Optional[str]:
         """The new pathname of the attachment file.
 
         Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
         - subpages_as_dirs=True  PageName/<attachment_dir>/filename
         - subpages_as_dirs=False <attachment_dir>/PageName/filename
-
+        - mode: -1=delete, 0=check, 1=add
         attachment_dir defaults to 'a' for otterwiki, '_attachments' for gollum/gitea.
         """
         if attachment == "":
             raise ValueError("No attachment path set")
-
-        ctx = get_context()
-
-        # TODO: Check if it starts with "/"
-        attachment_dir = ctx.attachment_dir
 
         page, _ = self.resolve_to_node(False, moin_page_name)
         if page is None:
@@ -364,11 +360,26 @@ class PageTree:
             print(self)
             return None
 
+        if mode == 1:
+            if page.attachments == None:
+                page.attachments = []
+            page.attachments.append(attachment)
+        elif mode == -1:
+            if page.attachments is not None:
+                page.attachments.remove(attachment)
+                if not page.attachments:
+                    page.attachments = None
+
         path = page.get_path()
+
+        ctx = get_context()
+        attachment_dir = ctx.attachment_dir
+
+        # TODO: Check if it starts with "/"
         if ctx.subpages_as_dirs:
-            return path + "/" + attachment_dir
+            path = path + "/" + attachment_dir
         else:
-            return attachment_dir + "/" + path
+            path = attachment_dir + "/" + path
 
         return path + "/" + attachment
 
