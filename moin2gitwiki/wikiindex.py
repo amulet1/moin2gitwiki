@@ -179,6 +179,10 @@ class MoinEditEntries:
                     # use current page path (MoinMoin shows old revisions under current page name)
                     # if same name attachment was modified multiple times only most recent addition will be captured
                     # key = "\t".join([PagePath.moin_name_to_link(page_name), attachment])
+                    if page != page_name:
+                        print(
+                            f"WARNING: Attachment {attachment} on page {page} is not under the same name as the page it was attached to {page_name}")
+
                     key = "\t".join([PagePath.moin_name_to_link(page), attachment])
                     attachment_link_table[key] = entry
 
