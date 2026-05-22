@@ -96,6 +96,9 @@ class Node:
         """Collect path for subtree deletion, leaves first.
 
         """
+        print(f"Collecting delete paths for {node_path}{self.children}")
+        print(f"Node: {self}")
+
         for name, child in self.children.items():
             if child.category is None:
                 print(f"{node_path}/{name}")
