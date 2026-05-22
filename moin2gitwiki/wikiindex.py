@@ -225,7 +225,7 @@ class MoinEditEntries:
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
+            destination = self.category_tree.attachment_destination(0, revision.page_name, revision.attachment)
             if destination:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
