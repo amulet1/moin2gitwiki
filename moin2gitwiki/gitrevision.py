@@ -53,6 +53,8 @@ class GitExportStream:
         tree = self._category_tree
         description: Optional[str]
 
+        print(tree)
+
         print(
             f"add_wiki_revision: type={revision.edit_type.name} path={revision.page_path} name={revision.page_name} revision={revision.page_revision} category={category} prev={revision.previous_page_name}")
 
@@ -86,7 +88,7 @@ class GitExportStream:
             if old_page:
                 # preserve attachments
                 page.attachments = old_page.attachments
-            
+
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.NEW:
