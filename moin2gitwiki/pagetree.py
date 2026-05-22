@@ -259,11 +259,12 @@ class PageTree:
 
     def add_side(
             self,
+            file_ops: List[str],
             new: bool,
             moin_page_name: str,
             moin_category_name: Optional[str],
             blob_mark: int
-    ) -> List[str]:
+    ) -> Node:
         """Add or update a node and return (path, blob_mark) for M commands.
 
         Finds an existing node or creates a new one.
@@ -278,8 +279,6 @@ class PageTree:
             category = None
         else:
             category, _ = self.resolve_to_node(True, moin_category_name)
-
-        file_ops: List[str] = []
 
         if node.blob_mark is None:
             # page does not exist
@@ -301,12 +300,11 @@ class PageTree:
 
         node.add_add_ops(file_ops)
 
-        return file_ops
+        return node
 
-    def delete_side(self, moin_page_name: str) -> List[str]:
+    def delete_side(self, file_ops: List[str], moin_page_name: str) -> Optional[Node]:
+        """Delete a node and return the deleted node."""
         node, nodes = self.resolve_to_node(False, moin_page_name)
-
-        file_ops: List[str] = []
 
         if node is None:
             self.logger.warning("delete_node: page does not exist (name=%r)", moin_page_name)
@@ -340,7 +338,7 @@ class PageTree:
 
                 node = parent
 
-        return file_ops
+        return node
 
     # FIXME
     def attachment_destination(self, mode: int, moin_page_name: str, attachment: str) -> Optional[str]:

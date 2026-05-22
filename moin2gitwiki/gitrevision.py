@@ -56,17 +56,19 @@ class GitExportStream:
         print(
             f"add_wiki_revision: type={revision.edit_type.name} path={revision.page_path} name={revision.page_name} revision={revision.page_revision} category={category} prev={revision.previous_page_name}")
 
+        file_ops = []
+
         if revision.edit_type == MoinEditType.ATTACH:
             dest = tree.attachment_destination(1, revision.page_name, revision.attachment)
             if not dest:
                 return
 
             blob_ref = self.output_blob(revision.attachment_content_bytes())
-            file_ops = [f"M 100644 :{blob_ref} {dest}\n"]
+            file_ops.append(f"M 100644 :{blob_ref} {dest}\n")
             description = f"Attach {revision.attachment} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.DELETE:
-            file_ops = tree.delete_side(revision.page_name)
+            tree.delete_side(file_ops, revision.page_name)
             description = f"Delete {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.RENAME:
@@ -74,26 +76,31 @@ class GitExportStream:
                 # TODO: warning
                 return
             blob_ref = self.output_blob(content)
-            file_ops = []
 
-            if revision.previous_page_name is not None:
-                file_ops.extend(tree.delete_side(revision.previous_page_name))
+            if revision.previous_page_name is None:
+                old_page = None
+            else:
+                old_page = tree.delete_side(file_ops, revision.previous_page_name)
 
-            file_ops.extend(tree.add_side(False, revision.page_name, category, blob_ref))
+            page = tree.add_side(file_ops, True, revision.page_name, category, blob_ref)
+            if old_page:
+                # preserve attachments
+                page.attachments = old_page.attachments
+            
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.NEW:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            file_ops = tree.add_side(True, revision.page_name, category, blob_ref)
+            tree.add_side(file_ops, True, revision.page_name, category, blob_ref)
             description = f"Add {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            file_ops = tree.add_side(False, revision.page_name, category, blob_ref)
+            tree.add_side(file_ops, False, revision.page_name, category, blob_ref)
             description = f"Update {revision.page_name}"
 
         else:
