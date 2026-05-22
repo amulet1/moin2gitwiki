@@ -79,10 +79,11 @@ class PagePath:
 
         if ctx.category_folders and sanitized:
             category = cls.strip_prefix(sanitized[0], "Category")
-            if category:
-                # replace the first part with the non-empty category name
-                sanitized[0] = category
+            if category is not None:
                 is_category = True
+                # only replace the first part if category name is not empty
+                if category:
+                    sanitized[0] = category
 
         return cls(is_category, sanitized)
 
@@ -100,11 +101,11 @@ class PagePath:
         return re.sub(r'\(([0-9a-fA-F]+)\)', decode_hex, thing)
 
     @staticmethod
-    def strip_prefix(text: str, prefix: str) -> str:
+    def strip_prefix(text: str, prefix: str) -> Optional[str]:
         if text.startswith(prefix):
             return text.removeprefix(prefix).strip()
 
-        return ""
+        return None
 
     @classmethod
     def moin_name_to_link(cls, thing: str) -> str:
