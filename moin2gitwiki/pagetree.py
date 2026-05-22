@@ -16,7 +16,7 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
-from typing import Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple
 
 import attr
 
@@ -35,8 +35,6 @@ class Node:
     Attributes:
         name:         Stripped category name for categories (e.g. "Foo"),
                       or sanitized page name for pages (e.g. "EMail").
-#        page_path:    MoinMoin filesystem page_path — stable unique key
-#                      for pages. None for category nodes.
         children:     Direct child nodes.
         blob_mark:    Latest content mark — needed to re-emit the file
                       when the node moves.
@@ -44,13 +42,10 @@ class Node:
         category:     Reference to the page category or None.
     """
     name: str
-    #   # to be deleted
-    #   page_path: Optional[str] = None
-
-    children: dict[str, Node] = {}
     blob_mark: Optional[int] = None
-    parent: Optional[Node] = attr.ib(default=None, repr=False)
-    category: Optional[Node] = attr.ib(default=None, repr=False)
+    children: Dict[str, Node] = attr.Factory(dict)
+    parent: Optional[Node] = attr.ib(repr=False, default=None)
+    category: Optional[Node] = attr.ib(repr=False, default=None)
 
     @property
     def exists(self) -> bool:
@@ -202,29 +197,30 @@ class PageTree:
 
         return paths
 
-    def resolve_to_node(self, create: bool, moin_page_name: str) -> Tuple[Optional[Node], Optional[dict[str, Node]]]:
+    def resolve_to_node(self, create: bool, moin_page_name: str) -> Tuple[Optional[Node], dict[str, Node]]:
         """Walk up the tree to the node for the path, creating missing nodes if requested.
 
         """
         path = PagePath.from_moin_name(moin_page_name)
         nodes = self.categories if path.is_category else self.regular
 
-        node = None
-        parent = None
-
+        node: Optional[Node] = None
         for name in path.parts:
+            if node:
+                nodes = node.children
+
+            parent = node
+
             node = nodes.get(name)
             if node is None:
                 if not create:
-                    return None, None
+                    break
 
                 # create new node
                 print(f"Creating missing node {name} for {parent.name if parent else '[root]'}")
-                node = Node(name=name, parent=parent, category=None)
+                node = Node(name=name, parent=parent)
+                assert node is not None
                 nodes[name] = node
-
-            parent = node
-            nodes = node.children
 
         return node, nodes
 
@@ -240,7 +236,6 @@ class PageTree:
         Finds an existing node or creates a new one.
         Attaches to parent, computes paths for the whole subtree.
         """
-
         print(f"add_side: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
 
         node, _ = self.resolve_to_node(True, moin_page_name)
@@ -262,8 +257,9 @@ class PageTree:
             if new:
                 self.logger.warning("add_node: page already exists (name=%r)", moin_page_name)
 
-            if category is not node.category:
-                node.add_delete_ops(file_ops)
+        if category is not node.category:
+            # category changed, delete page it and uncategorized children
+            node.add_delete_ops(file_ops)
 
         node.category = category
         node.blob_mark = blob_mark
@@ -280,18 +276,30 @@ class PageTree:
         if node is None:
             self.logger.warning("delete_node: page does not exist (name=%r)", moin_page_name)
         else:
-            if node.category is not None:
-                node.add_delete_ops(file_ops)
+            # if node.category is None:
+            # TODO: can be optimized for the case when category is already None - no need to remove/readd children nodes
+            node.add_delete_ops(file_ops)
 
-                # mark node as deleted
-                node.category = None
-                node.blob_mark = None
-                node.add_add_ops(file_ops)
+            # mark node as deleted
+            node.category = None
+            node.blob_mark = None
 
-            if not node.children:
+            # readd children to root
+            node.add_add_ops(file_ops)
+
+            # clean up the tree
+            while not node.children:
+                print(f"Deleting node {node.name} with no children")
                 # no children, we can delete the node
+                assert node.blob_mark is None
+                assert node.category is None
+
                 del nodes[node.name]
+                parent = node.parent
+
+                # unlink node
                 node.parent = None
+                node = parent
 
         return file_ops
 
@@ -305,7 +313,7 @@ class PageTree:
 
         attachment_dir defaults to 'a' for otterwiki, '_attachments' for gollum/gitea.
         """
-        if attachment is None:
+        if attachment == "":
             raise ValueError("No attachment path set")
 
         ctx = get_context()
@@ -318,11 +326,13 @@ class PageTree:
             self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
             return None
 
-        decoded_page = page.get_path()
+        path = page.get_path()
         if ctx.subpages_as_dirs:
-            return decoded_page + "/" + attachment_dir + "/" + attachment
+            return path + "/" + attachment_dir
+        else:
+            return attachment_dir + "/" + path
 
-        return attachment_dir + "/" + decoded_page + "/" + attachment
+        return path + "/" + attachment
 
     # FIXME
     def markdown_page_name(self, moin_page_name: str) -> Optional[str]:
