@@ -246,7 +246,10 @@ class PageTree:
         node, _ = self.resolve_to_node(True, moin_page_name)
         assert node is not None
 
-        category, _ = self.resolve_to_node(True, moin_category_name) if moin_category_name else None
+        if moin_category_name is None:
+            category = None
+        else:
+            category, _ = self.resolve_to_node(True, moin_category_name)
 
         file_ops: List[str] = []
 
