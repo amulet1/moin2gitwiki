@@ -97,7 +97,7 @@ class Node:
 
         """
         print(f"Collecting delete paths for {node_path}")
-        print("/n".join(self.dump(1)))
+        print("\n".join(self.dump(1)))
 
         for name, child in self.children.items():
             if child.category is None:
@@ -112,8 +112,8 @@ class Node:
 
         """
         print(f"Collecting add paths for {node_path}")
-        print("/n".join(self.dump(1)))
-        
+        print("\n".join(self.dump(1)))
+
         if self.blob_mark is not None:
             paths.append((node_path, self.blob_mark))
 
