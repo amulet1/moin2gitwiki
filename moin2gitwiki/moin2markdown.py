@@ -133,10 +133,7 @@ class Moin2Markdown:
             tree = self.category_tree
             if tree is not None:
                 for node in tree.categories.values():
-                    translated = translated.replace(
-                        f"Category{node.name}".encode(),
-                        node.name.encode(),
-                    )
+                    translated = translated.replace(f"Category{node.name}".encode(), node.name.encode())
         return translated, primary_category
 
     def extract_content_section(self, html: str, skip=None):
@@ -206,8 +203,8 @@ class Moin2Markdown:
                         # detect category membership — only direct children of a
                         # linemark paragraph count as membership declarations
                         if tag.parent is current_linemark_p and new_url.startswith("Category"):
-                            cat_name = new_url[len("Category"):]
-                            if not (skip and cat_name.split("/", 1)[0] == skip):
+                            cat_name = new_url
+                            if skip is None or cat_name.split("/", 1)[0] != skip:
                                 if current_p_category is None:
                                     current_p_category = cat_name
 

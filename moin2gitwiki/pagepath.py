@@ -23,7 +23,7 @@ class PagePath:
     @property
     def category_name(self) -> Optional[str]:
         if self.is_category:
-            return self.parts[0]
+            return "Category" + self.parts[0]
 
         return None
 
