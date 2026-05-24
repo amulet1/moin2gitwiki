@@ -179,8 +179,9 @@ class MoinEditEntries:
                         print(
                             f"WARNING: Attachment {attachment} on page {page} is not under the same name as the page it was attached to {page_name}")
 
-                    key = "\t".join([PagePath.moin_name_to_link(page), attachment])
-                    attachment_link_table[key] = entry
+                    if entry.attachment_path().is_file():
+                        key = "\t".join([PagePath.moin_name_to_link(page), attachment])
+                        attachment_link_table[key] = entry
 
         ctx.logger.debug("Sorting edit entries")
         entries.sort(key=lambda x: x.edit_date)
