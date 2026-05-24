@@ -95,7 +95,7 @@ class GitExportStream:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            tpage = ree.add_page(file_ops, True, revision.page_name, category, blob_ref)
+            page = tree.add_page(file_ops, True, revision.page_name, category, blob_ref)
             tree.page_map[revision.page_path] = page
             description = f"Add {revision.page_name}"
 
