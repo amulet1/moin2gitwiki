@@ -224,19 +224,19 @@ class MoinEditEntries:
         return None
 
     # FIXME
-    def get_new_attachment_link_target(self, link, attachment):
+    def get_new_attachment_link_target(self, link: str, attachment: str):
         link = unquote(link)
 
         print(f"WARNING: get_new_attachment_link_target: {link} {attachment}")
         page = self.category_tree.lookup_page(link)
+        if page and attachment in page.attachments:
+            print(f"WARNING: NEW Attachment {attachment} on page {link}: path={page.get_path()}")
+        else:
+            print(f"WARNING: NEW Attachment {attachment} on page {link}: not found")
 
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            if page:
-                print(
-                    f"WARNING: Attachment {attachment} on page {link}: new={page.get_path()} old={revision.page_name}")
-
             destination = self.category_tree.attachment_destination(0, revision.page_name, revision.attachment)
             if destination:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
