@@ -28,7 +28,7 @@ class PagePath:
         return None
 
     @classmethod
-    def from_moin_name(cls, thing: str) -> PagePath:
+    def from_moin_name(cls, thing: str, force_category: bool = False) -> PagePath:
         """Decode MoinMoin name and convert to a page path.
 
         Processing steps:
@@ -75,7 +75,7 @@ class PagePath:
         if not ctx.subpages_as_dirs:
             sanitized = ["_".join(sanitized)]
 
-        is_category = False
+        is_category = force_category
 
         if ctx.category_folders and sanitized:
             category = cls.strip_prefix(sanitized[0], "Category")

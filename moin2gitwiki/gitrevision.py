@@ -70,39 +70,41 @@ class GitExportStream:
             description = f"Attach {revision.attachment} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.DELETE:
-            tree.delete_side(file_ops, revision.page_name)
+            tree.delete_page(file_ops, revision.page_name)
+            tree.page_map.pop(revision.page_path, None)
             description = f"Delete {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.RENAME:
             if content is None:
-                # TODO: warning
+                # TODO: warning? Or process as type=DELETE?
                 return
             blob_ref = self.output_blob(content)
 
             if revision.previous_page_name is None:
+                # TODO: Warning
                 old_page = None
             else:
-                old_page = tree.delete_side(file_ops, revision.previous_page_name)
+                old_page = tree.delete_page(file_ops, revision.previous_page_name)
 
-            page = tree.add_side(file_ops, True, revision.page_name, category, blob_ref)
-            if old_page:
-                # preserve attachments
-                page.attachments = old_page.attachments
+            page = tree.add_page(file_ops, True, revision.page_name, category, blob_ref, old_page)
 
+            tree.page_map[revision.page_path] = page
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.NEW:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            tree.add_side(file_ops, True, revision.page_name, category, blob_ref)
+            tpage = ree.add_page(file_ops, True, revision.page_name, category, blob_ref)
+            tree.page_map[revision.page_path] = page
             description = f"Add {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            tree.add_side(file_ops, False, revision.page_name, category, blob_ref)
+            page = tree.add_page(file_ops, False, revision.page_name, category, blob_ref)
+            tree.page_map[revision.page_path] = page
             description = f"Update {revision.page_name}"
 
         else:
@@ -146,13 +148,13 @@ class GitExportStream:
         """Emit a commit adding or updating Home.md from the current tree state."""
 
         page_name = "Home"
-        page, _ = self._category_tree.resolve_to_node(True, page_name)
+        page = self._category_tree.moin_name_to_node(True, page_name)
         assert page is not None
 
         # track if a real Home page exists in the wiki
         if self._home_check:
             self._home_check = False
-            if page.exists:
+            if not page.empty:
                 self.home_overwritten = True
 
         content = self._generate_home_content().encode("utf-8")

@@ -209,6 +209,7 @@ class MoinEditEntries:
     # FIXME
     def get_new_link_target(self, link):
         # FIXME: Eliminate link_table
+        print(f"WARNING: get_new_link_target: {link}")
         page_name = self.link_table.get(link)
         if page_name:
             # FIXME
