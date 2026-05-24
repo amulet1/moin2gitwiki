@@ -357,7 +357,7 @@ class PageTree:
                     break
 
                 # create new node
-                print(f"Creating missing node {name} for {parent.name if parent else '[root]'}")
+                print(f"Creating node {name} for {parent.get_path(False) if parent else '[root]'}")
                 node = Node(name=name, parent=parent)
                 parent.children[name] = node
 
