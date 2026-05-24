@@ -102,14 +102,14 @@ class Node:
         parts.reverse()
         return "/".join(parts)
 
-    def update(self, new_category: Optional[Node], new_blob_mark: Optional[int], file_ops: Optional[List[str]]):
-        changed = new_category is not self._category or new_blob_mark is not self.blob_mark
+    def update(self, category: Optional[Node], blob_mark: Optional[int], file_ops: Optional[List[str]]):
+        changed = category is not self._category or blob_mark is not self.blob_mark
         if changed:
             if file_ops is not None:
                 self.delete_page_ops(file_ops)
 
-        self.blob_mark = new_blob_mark
-        self.update_category(new_category)
+        self.blob_mark = blob_mark
+        self.update_category(category)
 
     def update_category(self, new_category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
@@ -123,7 +123,7 @@ class Node:
             if new_category is not None:
                 # check for collisions
                 if new_category.children.get(self.name) is None:
-                    print(f"Adding node {self.name} to category {self._category.name}")
+                    print(f"Adding node {self.name} to category {self.new_category.name}")
                     new_category.children[self.name] = self
                 else:
                     # collision
