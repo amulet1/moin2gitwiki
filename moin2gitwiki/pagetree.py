@@ -418,6 +418,7 @@ class PageTree:
 
         # add mapping for links
         path = PagePath.moin_name_to_link(moin_page_path)
+        print(f"add_page: map[{path}] to {page.get_path(False)}")
         self.page_map[path] = page
 
         return page
