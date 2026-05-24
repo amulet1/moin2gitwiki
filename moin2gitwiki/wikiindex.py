@@ -232,7 +232,7 @@ class MoinEditEntries:
         if page and attachment in page.attachments:
             print(f"WARNING: NEW Attachment {attachment} on page {link}: path={page.get_path()}")
         else:
-            print(f"WARNING: NEW Attachment {attachment} on page {link}: not found")
+            print(f"WARNING: NEW Attachment {attachment} on page {link} not found")
 
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
