@@ -343,7 +343,7 @@ class PageTree:
         Finds an existing node or creates a new one.
         Attaches to parent, computes paths for the whole subtree.
         """
-        print(f"add_side: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
+        print(f"add_page: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
 
         node = self.moin_name_to_node(True, moin_page_name)
         assert node is not None
@@ -365,13 +365,14 @@ class PageTree:
                 self.logger.warning("add_node: page already exists (name=%r)", moin_page_name)
                 print(self)
 
+        # FIXME: update() should do it instead
         if category is not node.get_category():
             # category changed, delete page it and uncategorized children
             node.delete_page_ops(file_ops)
 
-        node._category = category
-        node.blob_mark = blob_mark
+        node.update(category, blob_mark, None)
 
+        # FIXME: update() should do it instead
         node.add_page_ops(file_ops)
 
         return node
