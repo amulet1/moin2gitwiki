@@ -56,7 +56,8 @@ class GitExportStream:
         print(tree)
 
         print(
-            f"add_wiki_revision: type={revision.edit_type.name} path={revision.page_path} name={revision.page_name} revision={revision.page_revision} category={category} prev={revision.previous_page_name}")
+            f"add_wiki_revision: time={revision.edit_date} type={revision.edit_type.name} path={revision.page_path} name={revision.page_name}")
+        print(f"category={category} prev={revision.previous_page_name} revision={revision.page_revision}")
 
         file_ops = []
 
