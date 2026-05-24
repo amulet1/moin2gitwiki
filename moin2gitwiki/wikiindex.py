@@ -231,6 +231,7 @@ class MoinEditEntries:
             destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
             if destination_new != destination:
                 print(f"ATT WARNING: new={destination_new} old={destination}")
+                print("KEYS: " + ", ".join(self.category_tree.page_map.keys()))
 
             if destination:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
@@ -239,7 +240,7 @@ class MoinEditEntries:
             destination = None
 
         if destination_new != destination:
-            print(f"ATT WARNING: new={destination_new} old={None}")
+            print(f"ATT WARNING: new={destination_new} old={destination}")
 
         self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
