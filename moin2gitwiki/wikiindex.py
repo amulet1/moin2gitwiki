@@ -145,14 +145,17 @@ class MoinEditEntries:
                             "attachments",
                             edit_fields[7],
                         )
+                        print(f"WARNING: ATTNEW on page {page}: {attachment_path}")
                         if os.path.isfile(attachment_path):
                             # attachment exists
                             ed_type = MoinEditType.ATTACH
                         else:
                             # cannot find attachment - ignore it and move on
+                            print(f"WARNING: Attachment {edit_fields[7]} on page {page} not found")
                             continue
                     else:
                         # unrecognized edit_type - just move on
+                        print(f"WARNING: Unrecognized edit type {edit_type} on page {page}")
                         continue
 
                 page_name = edit_fields[3]
