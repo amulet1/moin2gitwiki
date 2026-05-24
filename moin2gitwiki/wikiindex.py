@@ -179,8 +179,6 @@ class MoinEditEntries:
                     key = "\t".join([PagePath.moin_name_to_link(page), attachment])
                     attachment_link_table[key] = entry
 
-                # TODO: Handle attachment deletions
-
                 previous_page_name = page_name
 
         ctx.logger.debug("Sorting edit entries")
