@@ -125,6 +125,7 @@ class Node:
                     new_category.children[self.name] = self
                 else:
                     # collision
+                    print(f"Warning: Collision in category tree: {self.name} already exists")
                     if self._category is None:
                         return False  # no change
 
