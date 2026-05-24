@@ -123,6 +123,7 @@ class Node:
             if new_category is not None:
                 # check for collisions
                 if new_category.children.get(self.name) is None:
+                    print(f"Adding node {self.name} to category {self._category.name}")
                     new_category.children[self.name] = self
                 else:
                     # collision
