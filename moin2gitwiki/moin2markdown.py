@@ -132,7 +132,8 @@ class Moin2Markdown:
         if self.ctx.category_folders:
             tree = self.category_tree
             if tree is not None:
-                for node in tree.categories.values():
+                for node in tree.category.children.values():
+                    print(f"Replacing Category{node.name} with {node.name.encode()}")
                     translated = translated.replace(f"Category{node.name}".encode(), node.name.encode())
         return translated, primary_category
 
