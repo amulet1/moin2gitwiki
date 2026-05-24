@@ -48,7 +48,7 @@ class Node:
     _parent: Optional[Node] = attr.ib(repr=False)
     _category: Optional[Node] = attr.ib(repr=False)
     blob_mark: Optional[int] = None
-    attachments: Optional[List[str]] = None
+    attachments: Optional[Dict[str, Optional[int]]] = None
 
     def __init__(self, name: str, parent: Optional[Node] = None):
         self.name = name
@@ -59,10 +59,11 @@ class Node:
         self._category = None
 
     @property
-    def empty(self) -> bool:
+    def is_empty(self) -> bool:
         if self.blob_mark is None:
             assert self._category is None
             # assert self.attachments is None
+            return True
 
         return False
 
@@ -86,6 +87,20 @@ class Node:
     # Path computation
     # ------------------------------------------------------------------
 
+    def get_attachment_path(self, attachment: str) -> str:
+        path = self.get_path()
+
+        ctx = get_context()
+        attachment_dir = ctx.attachment_dir
+
+        # TODO: Check if it starts with "/"
+        if ctx.subpages_as_dirs:
+            path = path + "/" + attachment_dir
+        else:
+            path = attachment_dir + "/" + path
+
+        return path + "/" + attachment
+
     def get_path(self, use_category: bool = True) -> str:
         """Compute the full path for a node by walking up the parent chain."""
 
@@ -101,6 +116,22 @@ class Node:
 
         parts.reverse()
         return "/".join(parts)
+
+    def add_attachment(self, attachment: str, blob_mark: Optional[int]):
+        if self.attachments is None:
+            self.attachments = {}
+        self.attachments[attachment] = blob_mark
+
+    def remove_attachment(self, attachment: str) -> Optional[int]:
+        if self.attachments is None or self.attachments.get(attachment) is None:
+            print(f"WARNING: update_attachments: attachment {attachment} not found on page {self.get_path()}")
+            return None
+
+        blob_mark = self.attachments.pop(attachment, None)
+        if not self.attachments:
+            self.attachments = None
+
+        return blob_mark
 
     def update(self, category: Optional[Node], blob_mark: Optional[int], file_ops: Optional[List[str]]):
         changed = category is not self._category or blob_mark is not self.blob_mark
@@ -146,7 +177,7 @@ class Node:
     def delete_empty_leaves(self):
         # clean up the tree
         node = self
-        while node.empty and node._parent and not node.children:
+        while node.is_empty and node._parent and not node.children:
             # no children, we can delete the node
             print(f"Deleting node {node.name} with no children")
             parent = node._parent
@@ -345,8 +376,8 @@ class PageTree:
         """
         print(f"add_page: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
 
-        node = self.moin_name_to_node(True, moin_page_name)
-        assert node is not None
+        page = self.moin_name_to_node(True, moin_page_name)
+        assert page is not None
 
         if moin_category_name is None:
             category = None
@@ -354,7 +385,7 @@ class PageTree:
             print(f"add_side: category={moin_category_name}")
             category = self.moin_name_to_node(True, moin_category_name, force_category=True)
 
-        if node.blob_mark is None:
+        if page.is_empty:
             # page does not exist
             if not new:
                 self.logger.warning("add_node: page expected to exist (name=%r)", moin_page_name)
@@ -366,21 +397,29 @@ class PageTree:
                 print(self)
 
         # FIXME: update() should do it instead
-        if category is not node.get_category():
+        if category is not page.get_category():
             # category changed, delete page it and uncategorized children
-            node.delete_page_ops(file_ops)
+            page.delete_page_ops(file_ops)
 
-        node.update(category, blob_mark, None)
+        page.update(category, blob_mark, None)
 
         # FIXME: update() should do it instead
-        node.add_page_ops(file_ops)
+        page.add_page_ops(file_ops)
 
-        return node
+        # move attachments from old page
+        if old_page and old_page.attachments:
+            if page.attachments is None:
+                print(f"WARNING: update_attachments: moving attachments {old_page.attachments} to {moin_page_name}")
+                page.attachments = old_page.attachments
+            else:
+                print(f"WARNING: update_attachments: attachments already exist on page {moin_page_name}")
+
+        return page
 
     def delete_page(self, file_ops: List[str], moin_page_name: str) -> Optional[Node]:
         """Delete a node and return the deleted node."""
         page = self.moin_name_to_node(False, moin_page_name)
-        if page is None or page.empty:
+        if page is None or page.is_empty:
             self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
         else:
             old_category = page.get_category()
@@ -388,6 +427,7 @@ class PageTree:
                 page.delete_page_ops(file_ops)
 
             # mark node as deleted
+            # TODO: do file_ops here
             page.erase()
 
             if old_category is not None:
@@ -399,8 +439,31 @@ class PageTree:
 
         return page
 
+    def add_attachment(self, file_ops: List[str], moin_page_name: str, attachment: str, blob_mark: Optional[int]):
+        """Add an attachment to a node and return (path, blob_mark) for M commands.
+        """
+        page = self.moin_name_to_node(True, moin_page_name)
+        assert page is not None
+        page.add_attachment(attachment, blob_mark)
+        if blob_mark is not None:
+            dest = page.get_attachment_path(attachment)
+            file_ops.append(f"M 100644 :{blob_mark} {dest}\n")
+
+    def remove_attachment(self, file_ops: List[str], moin_page_name: str, attachment: str):
+        """
+        Removes an attachment from a specified MoinMoin page.
+        """
+        page = self.moin_name_to_node(False, moin_page_name)
+        if page is None:
+            self.logger.warning(f"remove_attachment: page does not exist (name={moin_page_name})")
+        else:
+            blob_mark = page.remove_attachment(attachment)
+            if blob_mark is not None:
+                dest = page.get_attachment_path(attachment)
+                file_ops.append(f"D {dest}\n")
+
     # FIXME
-    def attachment_destination(self, mode: int, moin_page_name: str, attachment: str) -> Optional[str]:
+    def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
         """The new pathname of the attachment file.
 
         Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
@@ -419,28 +482,7 @@ class PageTree:
             print(self)
             return None
 
-        if mode == 1:
-            if page.attachments is None:
-                page.attachments = []
-            page.attachments.append(attachment)
-        elif mode == -1:
-            if page.attachments is not None:
-                page.attachments.remove(attachment)
-                if not page.attachments:
-                    page.attachments = None
-
-        path = page.get_path()
-
-        ctx = get_context()
-        attachment_dir = ctx.attachment_dir
-
-        # TODO: Check if it starts with "/"
-        if ctx.subpages_as_dirs:
-            path = path + "/" + attachment_dir
-        else:
-            path = attachment_dir + "/" + path
-
-        return path + "/" + attachment
+        return page.get_attachment_path(attachment)
 
     # FIXME
     def markdown_page_name(self, moin_page_name: str) -> Optional[str]:

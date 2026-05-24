@@ -113,7 +113,7 @@ class Moin2Markdown:
         translated Markdown bytes (or None if the revision has no content),
         and primary_category is the detected primary category name (or None).
         """
-        if not revision.wiki_content_path().is_file():
+        if not revision.content_path().is_file():
             return None, None
 
         target = self.url_prefix.copy()

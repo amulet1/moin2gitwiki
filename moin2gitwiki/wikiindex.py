@@ -17,11 +17,12 @@ from .users import Moin2GitUser
 
 
 class MoinEditType(Enum):
-    NEW = auto()
-    PAGE = auto()
-    ATTACH = auto()
-    RENAME = auto()
-    DELETE = auto()
+    PAGE_ADD = auto()
+    PAGE_UPD = auto()
+    PAGE_REN = auto()
+    PAGE_DEL = auto()
+    ATT_ADD = auto()
+    ATT_DEL = auto()
 
 
 @attr.s(kw_only=True, frozen=True, slots=True)
@@ -56,7 +57,7 @@ class MoinEditEntry:
     user: Moin2GitUser = attr.ib()
     ctx = attr.ib(repr=False)
 
-    def wiki_content_path(self):
+    def content_path(self):
         """The file pathname of the revision file"""
         return self.ctx.moin_data.joinpath(
             "pages",
@@ -65,21 +66,17 @@ class MoinEditEntry:
             self.page_revision,
         )
 
-    def attachment_content_path(self):
+    def attachment_path(self):
         """The file pathname of the attachment file"""
         if self.attachment is None:
             raise ValueError("No attachment path set")
+
         return self.ctx.moin_data.joinpath(
             "pages",
             self.page_path,
             "attachments",
             self.attachment,
         )
-
-    def attachment_content_bytes(self):
-        """The content of the attachment retrieved as a byte string"""
-        data = self.attachment_content_path().read_bytes()
-        return data
 
 
 @attr.s(kw_only=True, frozen=True, slots=True)
@@ -130,29 +127,18 @@ class MoinEditEntries:
                 edit_type = edit_fields[2]
 
                 if edit_type == "SAVE/RENAME":
-                    ed_type = MoinEditType.RENAME
+                    ed_type = MoinEditType.PAGE_REN
                 else:
                     previous_page_name = None
                     if edit_type in ("SAVENEW", "SAVE", "SAVE/REVERT"):
                         if ctx.moin_data.joinpath("pages", page, "revisions", page_revision).is_file():
-                            ed_type = MoinEditType.NEW if edit_type == "SAVENEW" else MoinEditType.PAGE
+                            ed_type = MoinEditType.PAGE_ADD if edit_type == "SAVENEW" else MoinEditType.PAGE_UPD
                         else:
-                            ed_type = MoinEditType.DELETE
+                            ed_type = MoinEditType.PAGE_DEL
                     elif edit_type == "ATTNEW":
-                        attachment_path = os.path.join(
-                            pages_dir,
-                            page,
-                            "attachments",
-                            edit_fields[7],
-                        )
-                        print(f"WARNING: ATTNEW on page {page}: {attachment_path}")
-                        if os.path.isfile(attachment_path):
-                            # attachment exists
-                            ed_type = MoinEditType.ATTACH
-                        else:
-                            # cannot find attachment - ignore it and move on
-                            print(f"WARNING: Attachment {edit_fields[7]} on page {page} not found")
-                            continue
+                        ed_type = MoinEditType.ATT_ADD
+                    elif edit_type == "ATTDEL":
+                        ed_type = MoinEditType.ATT_DEL
                     else:
                         # unrecognized edit_type - just move on
                         print(f"WARNING: Unrecognized edit type {edit_type} on page {page}")
@@ -182,7 +168,7 @@ class MoinEditEntries:
                 link_table[key] = page_name
 
                 # TODO: Eliminate?
-                if ed_type == MoinEditType.ATTACH:
+                if ed_type == MoinEditType.ATT_ADD:
                     # use current page path (MoinMoin shows old revisions under current page name)
                     # if same name attachment was modified multiple times only most recent addition will be captured
                     # key = "\t".join([PagePath.moin_name_to_link(page_name), attachment])
@@ -235,21 +221,26 @@ class MoinEditEntries:
 
         print(f"WARNING: get_new_attachment_link_target: {link} {attachment}")
         page = self.category_tree.lookup_page(link)
-        if page and attachment in page.attachments:
-            print(f"WARNING: NEW Attachment {attachment} on page {link}: path={page.get_path()}")
-        else:
-            print(f"WARNING: NEW Attachment {attachment} on page {link} not found")
+
+        destination_new = page.get_attachment_path(attachment) if page is not None else None
 
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            destination = self.category_tree.attachment_destination(0, revision.page_name, revision.attachment)
+            destination_new = page.get_attachment_path(attachment) if page is not None else None
+            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
+            if destination_new != destination:
+                print(f"ATT WARNING: new={destination_new} old={destination}")
+
             if destination:
-                print(f"WARNING: OLD Attachment {attachment} on page {link} -> {destination}")
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
+        else:
+            destination = None
 
-        print(f"WARNING: OLD Attachment {attachment} on page {link} not found")
+        if destination_new != destination:
+            print(f"ATT WARNING: new={destination_new} old={None}")
+
         self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
 

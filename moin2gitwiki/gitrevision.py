@@ -1,3 +1,4 @@
+import os
 import typing
 from datetime import datetime
 from typing import List, Optional
@@ -61,21 +62,23 @@ class GitExportStream:
 
         file_ops = []
 
-        if revision.edit_type == MoinEditType.ATTACH:
-            dest = tree.attachment_destination(1, revision.page_name, revision.attachment)
-            if not dest:
-                return
-
-            blob_ref = self.output_blob(revision.attachment_content_bytes())
-            file_ops.append(f"M 100644 :{blob_ref} {dest}\n")
+        if revision.edit_type == MoinEditType.ATT_ADD:
+            attachment_path = revision.attachment_path()
+            if os.path.isfile(attachment_path):
+                blob_ref = attachment_path.read_bytes()
+            else:
+                blob_ref = None
+            tree.add_attachment(file_ops, revision.page_name, revision.attachment, blob_ref)
             description = f"Attach {revision.attachment} to {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.DELETE:
+        elif revision.edit_type == MoinEditType.ATT_DEL:
+            tree.remove_attachment(file_ops, revision.page_name, revision.attachment)
+            description = f"Detach {revision.attachment} from {revision.page_name}"
+        elif revision.edit_type == MoinEditType.PAGE_DEL:
             tree.delete_page(file_ops, revision.page_name)
             tree.page_map.pop(revision.page_path, None)
             description = f"Delete {revision.page_name}"
 
-        elif revision.edit_type == MoinEditType.RENAME:
+        elif revision.edit_type == MoinEditType.PAGE_REN:
             if content is None:
                 # TODO: warning? Or process as type=DELETE?
                 return
@@ -92,7 +95,7 @@ class GitExportStream:
             tree.page_map[revision.page_path] = page
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
-        elif revision.edit_type == MoinEditType.NEW:
+        elif revision.edit_type == MoinEditType.PAGE_ADD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
@@ -100,7 +103,7 @@ class GitExportStream:
             tree.page_map[revision.page_path] = page
             description = f"Add {revision.page_name}"
 
-        elif revision.edit_type == MoinEditType.PAGE:
+        elif revision.edit_type == MoinEditType.PAGE_UPD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
@@ -115,7 +118,7 @@ class GitExportStream:
             return
 
         # in incremental mode, update Home.md as part of this commit
-        if self.home_page == "incremental" and revision.edit_type != MoinEditType.ATTACH:
+        if self.home_page == "incremental" and revision.edit_type != MoinEditType.ATT_ADD:
             home_content = self._generate_home_content().encode("utf-8")
             home_blob = self.output_blob(home_content)
             file_ops.append(f"M 100644 :{home_blob} Home.md\n")
@@ -155,7 +158,7 @@ class GitExportStream:
         # track if a real Home page exists in the wiki
         if self._home_check:
             self._home_check = False
-            if not page.empty:
+            if not page.is_empty:
                 self.home_overwritten = True
 
         content = self._generate_home_content().encode("utf-8")
@@ -167,7 +170,7 @@ class GitExportStream:
         revision = MoinEditEntry(
             edit_date=datetime.now(),
             page_revision="1",
-            edit_type=MoinEditType.PAGE,
+            edit_type=MoinEditType.PAGE_UPD,
             page_name="Home",
             attachment="",
             comment="Synthetic Home Page",
