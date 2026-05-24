@@ -225,7 +225,7 @@ class MoinEditEntries:
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
-            destination_new = page.get_attachment_path(attachment) if page is not None else None
+            destination_new = page.get_attachment_path(attachment) if page and page.has_attachment(attachment) else None
             destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
             if destination_new != destination:
                 print(f"ATT WARNING: new={destination_new} old={destination}")

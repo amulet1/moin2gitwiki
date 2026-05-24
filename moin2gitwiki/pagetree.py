@@ -117,6 +117,9 @@ class Node:
         parts.reverse()
         return "/".join(parts)
 
+    def has_attachment(self, attachment: str) -> bool:
+        return self.attachments is not None and self.attachments.get(attachment) is not None
+
     def add_attachment(self, attachment: str, blob_mark: Optional[int]):
         if self.attachments is None:
             self.attachments = {}
