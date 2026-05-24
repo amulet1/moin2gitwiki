@@ -146,6 +146,8 @@ class MoinEditEntries:
 
                 page_name = edit_fields[3]
                 attachment = edit_fields[7]
+                comment = edit_fields[8]
+
                 entry = MoinEditEntry(
                     edit_date=edit_date,
                     page_revision=page_revision,
@@ -153,15 +155,16 @@ class MoinEditEntries:
                     page_name=page_name,
                     previous_page_name=previous_page_name,
                     attachment=attachment,
-                    comment=edit_fields[8],
+                    comment=comment,
                     page_path=page,
                     user=ctx.users.get_user_by_id_or_anonymous(edit_fields[6]),
                     ctx=ctx,
                 )
                 print(
-                    f"DEBUG: {entry.edit_date} {entry.page_revision} {entry.edit_type} {entry.page_path} {entry.attachment}")
+                    f"DEBUG: {entry.edit_date} {entry.page_revision} T={entry.edit_type} P={entry.page_path} A={entry.attachment}")
 
                 entries.append(entry)
+                previous_page_name = page_name
 
                 # TODO: Eliminate?
                 key = PagePath.moin_name_to_link(entry.page_name)
@@ -178,8 +181,6 @@ class MoinEditEntries:
 
                     key = "\t".join([PagePath.moin_name_to_link(page), attachment])
                     attachment_link_table[key] = entry
-
-                previous_page_name = page_name
 
         ctx.logger.debug("Sorting edit entries")
         entries.sort(key=lambda x: x.edit_date)
