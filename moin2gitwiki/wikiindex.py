@@ -210,9 +210,8 @@ class MoinEditEntries:
     # FIXME
     def get_new_link_target(self, link):
         # FIXME: Eliminate link_table
-        print(f"WARNING: get_new_link_target: {link}")
-
         link = unquote(link)
+        print(f"WARNING: get_new_link_target: {link}")
 
         page_name = self.link_table.get(link)
         if page_name:
@@ -226,6 +225,8 @@ class MoinEditEntries:
 
     # FIXME
     def get_new_attachment_link_target(self, link, attachment):
+        print(f"WARNING: get_new_attachment_link_target: {link} {attachment}")
+
         key = "\t".join([link, attachment])
         revision = self.attachment_link_table.get(key)
         if revision:
