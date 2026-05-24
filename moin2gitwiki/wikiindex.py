@@ -7,6 +7,7 @@ from datetime import timedelta
 from enum import Enum
 from enum import auto
 from typing import List
+from urllib.parse import unquote
 
 import attr
 
@@ -210,6 +211,9 @@ class MoinEditEntries:
     def get_new_link_target(self, link):
         # FIXME: Eliminate link_table
         print(f"WARNING: get_new_link_target: {link}")
+
+        link = unquote(link)
+
         page_name = self.link_table.get(link)
         if page_name:
             # FIXME
