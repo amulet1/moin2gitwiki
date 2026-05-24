@@ -117,6 +117,7 @@ class Node:
             # category changed
             if self._category:
                 # remove node from old category
+                print(f"Removing node {self.name} from category {self._category.name}")
                 del self._category.children[self.name]
 
             if new_category is not None:
