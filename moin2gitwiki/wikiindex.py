@@ -161,7 +161,7 @@ class MoinEditEntries:
                     ctx=ctx,
                 )
                 print(
-                    f"DEBUG: {entry.edit_date} {entry.page_revision} T={entry.edit_type} P={entry.page_path} A={entry.attachment}")
+                    f"DEBUG: {entry.edit_date} {entry.page_revision} T={entry.edit_type} P={entry.page_path} N={entry.page_name} A={entry.attachment}")
 
                 entries.append(entry)
                 previous_page_name = page_name
