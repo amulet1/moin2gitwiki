@@ -65,7 +65,8 @@ class GitExportStream:
         if revision.edit_type == MoinEditType.ATT_ADD:
             attachment_path = revision.attachment_path()
             if os.path.isfile(attachment_path):
-                blob_ref = attachment_path.read_bytes()
+                data = attachment_path.read_bytes()
+                blob_ref = self.output_blob(data)
             else:
                 blob_ref = None
             tree.add_attachment(file_ops, revision.page_name, revision.attachment, blob_ref)
