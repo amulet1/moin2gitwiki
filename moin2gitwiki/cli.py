@@ -255,12 +255,12 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     ctx.attachment_dir = attachment_dir
     ctx.category_folders = category_folders
 
+    tree = PageTree()
+
     #
     # build your initial revision set from the wiki data
-    revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
+    revisions = MoinEditEntries.create_edit_entries(tree, ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
-
-    tree = PageTree()
 
     #
     # build the translator
@@ -332,7 +332,9 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     """
     #
     # build your initial revision set from the wiki data
-    revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
+    tree = PageTree()
+
+    revisions = MoinEditEntries.create_edit_entries(tree, ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
     #
     # build the translator
@@ -341,7 +343,7 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
-        category_tree=None
+        category_tree=tree
     )
     #
     # find the page and translate it

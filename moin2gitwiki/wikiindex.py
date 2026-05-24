@@ -92,14 +92,12 @@ class MoinEditEntries:
     ctx = attr.ib(repr=False)
 
     @classmethod
-    def create_edit_entries(cls, ctx) -> MoinEditEntries:
+    def create_edit_entries(cls, tree: PageTree, ctx) -> MoinEditEntries:
         pages_dir = os.path.join(ctx.moin_data, "pages")
         pages = os.listdir(pages_dir)
         epoch = datetime(1970, 1, 1)
         attachment_link_table = {}
         link_table = {}
-
-        tree = PageTree()
 
         entries = []
         for page in pages:
