@@ -5,6 +5,7 @@ from typing import List, Optional
 
 import attr
 
+from .pagepath import PagePath
 from .pagetree import PageTree
 from .wikiindex import MoinEditEntry
 from .wikiindex import MoinEditType
@@ -54,6 +55,11 @@ class GitExportStream:
         tree = self._category_tree
         description: Optional[str]
 
+        path = PagePath.moin_name_to_link(revision.page_path)
+
+        print(
+            f"add_wiki_revision: {revision.edit_date} {revision.page_revision} {revision.edit_type.name} path={path} name={revision.page_name}"
+        )
         print(tree)
 
         print(
@@ -75,8 +81,7 @@ class GitExportStream:
             tree.remove_attachment(file_ops, revision.page_name, revision.attachment)
             description = f"Detach {revision.attachment} from {revision.page_name}"
         elif revision.edit_type == MoinEditType.PAGE_DEL:
-            tree.delete_page(file_ops, revision.page_name)
-            tree.page_map.pop(revision.page_path, None)
+            tree.delete_page(file_ops, revision.page_name, revision.page_path)
             description = f"Delete {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_REN:
@@ -91,25 +96,22 @@ class GitExportStream:
             else:
                 old_page = tree.delete_page(file_ops, revision.previous_page_name)
 
-            page = tree.add_page(file_ops, True, revision.page_name, category, blob_ref, old_page)
-
-            tree.page_map[revision.page_path] = page
+            page = tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_page)
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_ADD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            page = tree.add_page(file_ops, True, revision.page_name, category, blob_ref)
-            tree.page_map[revision.page_path] = page
+            page = tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref)
             description = f"Add {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_UPD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            page = tree.add_page(file_ops, False, revision.page_name, category, blob_ref)
-            tree.page_map[revision.page_path] = page
+            page = tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
+
             description = f"Update {revision.page_name}"
 
         else:

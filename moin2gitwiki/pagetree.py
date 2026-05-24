@@ -365,6 +365,7 @@ class PageTree:
             file_ops: List[str],
             new: bool,
             moin_page_name: str,
+            moin_page_path: str,
             moin_category_name: Optional[str],
             blob_mark: int,
             old_page: Optional[Node] = None
@@ -374,7 +375,8 @@ class PageTree:
         Finds an existing node or creates a new one.
         Attaches to parent, computes paths for the whole subtree.
         """
-        print(f"add_page: new={new} page={moin_page_name} category={moin_category_name} mark={blob_mark}")
+        print(
+            f"add_page: new={new} name={moin_page_name} category={moin_category_name} mark={blob_mark} page={moin_page_path}")
 
         page = self.moin_name_to_node(True, moin_page_name)
         assert page is not None
@@ -414,9 +416,14 @@ class PageTree:
             else:
                 print(f"WARNING: update_attachments: attachments already exist on page {moin_page_name}")
 
+        # add mapping for links
+        path = PagePath.moin_name_to_link(moin_page_path)
+        self.page_map[path] = page
+
         return page
 
-    def delete_page(self, file_ops: List[str], moin_page_name: str) -> Optional[Node]:
+    def delete_page(self, file_ops: List[str], moin_page_name: str, moin_page_path: Optional[str] = None) -> Optional[
+        Node]:
         """Delete a node and return the deleted node."""
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None or page.is_empty:
@@ -436,6 +443,11 @@ class PageTree:
 
             # clean up
             page.delete_empty_leaves()
+
+        if moin_page_path is not None:
+            path = PagePath.moin_name_to_link(moin_page_path)
+            # TODO: Warn if it does not exist
+            self.page_map.pop(path, None)
 
         return page
 
