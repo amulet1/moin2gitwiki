@@ -169,6 +169,9 @@ class MoinEditEntries:
                     user=ctx.users.get_user_by_id_or_anonymous(edit_fields[6]),
                     ctx=ctx,
                 )
+                print(
+                    f"DEBUG: {entry.edit_date} {entry.page_revision} {entry.edit_type} {entry.page_path} {entry.attachment}")
+
                 entries.append(entry)
 
                 # TODO: Eliminate?
