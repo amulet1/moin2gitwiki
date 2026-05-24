@@ -242,6 +242,7 @@ class MoinEditEntries:
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
 
+        print(f"WARNING: Attachment {attachment} on page {link} not found")
         self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
 
