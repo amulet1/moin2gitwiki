@@ -92,7 +92,7 @@ class Node:
         node = self
 
         parts: list = []
-        while node is not None:
+        while node and node.name:
             parts.append(node.name)
             if use_category and node._category:
                 node = node._category
