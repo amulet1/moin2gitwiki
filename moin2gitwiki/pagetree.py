@@ -29,7 +29,7 @@ from moin2gitwiki.pagepath import PagePath
 # Node
 # ---------------------------------------------------------------------------
 
-@attr.s(auto_attribs=True, slots=True)
+@attr.s(auto_attribs=True, slots=True, init=False)
 class Node:
     """One page or category in the wiki tree.
 
@@ -42,14 +42,21 @@ class Node:
         _parent:      Direct reference to the parent Node, or None if root.
         _category:    Reference to the page category or None.
     """
+
     name: str
+    children: Dict[str, Node] = attr.ib(repr=False)
+    _parent: Optional[Node] = attr.ib(repr=False)
+    _category: Optional[Node] = attr.ib(repr=False)
     blob_mark: Optional[int] = None
     attachments: Optional[List[str]] = None
-    children: Dict[str, Node] = attr.Factory(dict)
-    _parent: Optional[Node] = attr.ib(repr=False, default=None, alias="parent")
-    _category: Optional[Node] = attr.ib(repr=False, default=None, alias="category")
 
-    # category: Optional[Node] = attr.ib(repr=False, default=None)
+    def __init__(self, name: str, parent: Optional[Node] = None):
+        self.name = name
+        self.blob_mark = None
+        self.attachments = None
+        self.children = {}
+        self._parent = parent
+        self._category = None
 
     @property
     def empty(self) -> bool:
