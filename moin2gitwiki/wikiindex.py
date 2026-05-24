@@ -239,10 +239,11 @@ class MoinEditEntries:
         if revision:
             destination = self.category_tree.attachment_destination(0, revision.page_name, revision.attachment)
             if destination:
+                print(f"WARNING: OLD Attachment {attachment} on page {link} -> {destination}")
                 self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
 
-        print(f"WARNING: Attachment {attachment} on page {link} not found")
+        print(f"WARNING: OLD Attachment {attachment} on page {link} not found")
         self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
 
