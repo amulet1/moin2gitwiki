@@ -2,6 +2,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 
 import attr
 from bs4 import BeautifulSoup
@@ -200,24 +201,23 @@ class Moin2Markdown:
 
                 if url.url.startswith(self.url_prefix.url):
                     new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
+                    new_url = unquote(new_url)
                     if len(str(url.query)) == 0:
                         # detect category membership — only direct children of a
                         # linemark paragraph count as membership declarations
                         if tag.parent is current_linemark_p and new_url.startswith("Category"):
-                            cat_name = new_url
-                            if skip is None or cat_name.split("/", 1)[0] != skip:
+                            if skip is None or new_url.split("/", 1)[0] != skip:
                                 if current_p_category is None:
-                                    current_p_category = cat_name
+                                    current_p_category = new_url
 
                         # conventional link — rewrite or strip
                         new_target = self.revisions.get_new_link_target(new_url)
                         if new_target:
                             tag["href"] = new_target
                             self.ctx.logger.debug(f"Normal map -> {new_target}")
-                    elif (
-                            "action" in url.query.params
-                            and "target" in url.query.params
-                            and url.query.params["action"] == "AttachFile"
+                    elif ("action" in url.query.params
+                          and "target" in url.query.params
+                          and url.query.params["action"] == "AttachFile"
                     ):
                         attach_target = url.query.params["target"]
                         new_target = self.revisions.get_new_attachment_link_target(
@@ -243,13 +243,13 @@ class Moin2Markdown:
                 if target:
                     url = self.url_prefix.copy().join(target)
                     if url.url.startswith(self.url_prefix.url):
-                        new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                         self.ctx.logger.debug(f"Image params {url.query.params}")
-                        if (
-                                "action" in url.query.params
+                        if ("action" in url.query.params
                                 and "target" in url.query.params
                                 and url.query.params["action"] == "AttachFile"
                         ):
+                            new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
+                            new_url = unquote(new_url)
                             attach_target = url.query.params["target"]
                             new_target = self.revisions.get_new_attachment_link_target(
                                 new_url, attach_target,
@@ -274,14 +274,15 @@ class Moin2Markdown:
 
         return "".join([str(x) for x in content.contents]), last_category
 
-    def translate(self, input: str) -> bytes:
+    @staticmethod
+    def translate(content: str) -> bytes:
         """Translate HTML to GitHub Flavored Markdown using pandoc"""
         process = subprocess.Popen(
             ["pandoc", "-f", "html", "-t", "gfm"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
         )
-        (output, _) = process.communicate(input.encode("utf-8"))
+        (output, _) = process.communicate(content.encode("utf-8"))
         return output
 
 # end
