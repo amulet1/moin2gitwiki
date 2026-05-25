@@ -125,10 +125,7 @@ class GitExportStream:
     def _generate_home_content(self) -> str:
         """Generate Home page content from the current tree state."""
         tree = self._category_tree
-        current_paths = sorted(
-            path for path, blob_mark in tree.all_paths()
-            if blob_mark is not None
-        )
+        current_paths = sorted(tree.all_paths())
         pages = {}
         for page_path in current_paths:
             page_split = page_path.split("/")

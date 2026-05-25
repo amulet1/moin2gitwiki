@@ -331,11 +331,8 @@ class PageTree:
         """
         paths: List[str] = []
 
-        for name, node in self.regular.children.items():
-            node.collect_all_paths(paths, "")
-
-        for name, node in self.category.children.items():
-            node.collect_all_paths(paths, "")
+        self.regular.collect_all_paths(paths, "")
+        self.category.collect_all_paths(paths, "")
 
         return paths
 
@@ -414,7 +411,8 @@ class PageTree:
         # move attachments from old page
         if old_page and old_page.attachments:
             if page.attachments is None:
-                print(f"WARNING: update_attachments: moving attachments {old_page.attachments} to {moin_page_name}")
+                print(
+                    f"WARNING: update_attachments: moving attachments {old_page.attachments} to {page.get_path(False)}")
                 page.attachments = old_page.attachments
             else:
                 print(f"WARNING: update_attachments: attachments already exist on page {moin_page_name}")
