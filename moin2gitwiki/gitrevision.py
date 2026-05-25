@@ -5,7 +5,6 @@ from typing import List, Optional
 
 import attr
 
-from .pagepath import PagePath
 from .pagetree import PageTree
 from .wikiindex import MoinEditEntry
 from .wikiindex import MoinEditType
@@ -55,16 +54,11 @@ class GitExportStream:
         tree = self._category_tree
         description: Optional[str]
 
-        path = PagePath.moin_name_to_link(revision.page_path)
-
-        print(
-            f"add_wiki_revision: {revision.edit_date} {revision.page_revision} {revision.edit_type.name} path={path} name={revision.page_name}"
-        )
-        print(tree)
-
+        # DEBUG
         print(
             f"add_wiki_revision: {revision.edit_date} {revision.page_revision} {revision.edit_type.name} path={revision.page_path} name={revision.page_name}")
         print(f"cat={category} prev={revision.previous_page_name} att={revision.attachment}")
+        print(tree)
 
         file_ops = []
 
@@ -75,7 +69,7 @@ class GitExportStream:
                 blob_ref = self.output_blob(data)
             else:
                 blob_ref = None
-            tree.add_attachment(file_ops, revision.page_name, revision.attachment, blob_ref)
+            tree.add_attachment(file_ops, revision.page_name, revision.page_path, revision.attachment, blob_ref)
             description = f"Attach {revision.attachment} to {revision.page_name}"
         elif revision.edit_type == MoinEditType.ATT_DEL:
             tree.remove_attachment(file_ops, revision.page_name, revision.attachment)

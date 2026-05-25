@@ -419,6 +419,7 @@ class PageTree:
             else:
                 print(f"WARNING: update_attachments: attachments already exist on page {moin_page_name}")
 
+        # TODO: Make it part of moin_name_to_node
         # add mapping for links
         path = PagePath.moin_name_to_link(moin_page_path)
         print(f"add_page: map[{path}] to {page.get_path(False)}")
@@ -455,7 +456,8 @@ class PageTree:
 
         return page
 
-    def add_attachment(self, file_ops: List[str], moin_page_name: str, attachment: str, blob_mark: Optional[int]):
+    def add_attachment(self, file_ops: List[str], moin_page_name: str, moin_page_path: str, attachment: str,
+                       blob_mark: Optional[int]):
         """Add an attachment to a node and return (path, blob_mark) for M commands.
         """
         page = self.moin_name_to_node(True, moin_page_name)
@@ -464,6 +466,12 @@ class PageTree:
         if blob_mark is not None:
             dest = page.get_attachment_path(attachment)
             file_ops.append(f"M 100644 :{blob_mark} {dest}\n")
+
+        # TODO: Make it part of moin_name_to_node
+        # add mapping for links
+        path = PagePath.moin_name_to_link(moin_page_path)
+        print(f"add_attachment: map[{path}] to {page.get_path(False)}")
+        self.page_map[path] = page
 
     def remove_attachment(self, file_ops: List[str], moin_page_name: str, attachment: str):
         """
