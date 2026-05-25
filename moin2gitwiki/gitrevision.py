@@ -32,7 +32,7 @@ class GitExportStream:
     branch: str = attr.ib(default="refs/heads/master")
     ctx = attr.ib(repr=False)
     home_page: str = attr.ib(default="end")
-    _category_tree: PageTree = attr.ib()
+    _tree: PageTree = attr.ib()
 
     home_overwritten: bool = attr.ib(default=False, init=False)
     _home_check: bool = attr.ib(default=True, init=False)
@@ -51,7 +51,7 @@ class GitExportStream:
             content:  The content of the wiki object, after translation, as bytes
             category: Primary category detected from HTML content, or None
         """
-        tree = self._category_tree
+        tree = self._tree
         description: Optional[str]
 
         # DEBUG
@@ -124,7 +124,7 @@ class GitExportStream:
 
     def _generate_home_content(self) -> str:
         """Generate Home page content from the current tree state."""
-        tree = self._category_tree
+        tree = self._tree
         current_paths = sorted(tree.all_paths())
         pages = {}
         for page_path in current_paths:
@@ -146,7 +146,7 @@ class GitExportStream:
         """Emit a commit adding or updating Home.md from the current tree state."""
 
         page_name = "Home"
-        page = self._category_tree.moin_name_to_node(True, page_name)
+        page = self._tree.moin_name_to_node(True, page_name)
         assert page is not None
 
         # track if a real Home page exists in the wiki

@@ -1,7 +1,6 @@
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 from urllib.parse import unquote
 
 import attr
@@ -32,7 +31,7 @@ class Moin2Markdown:
     fetch_cache: FetchCache = attr.ib()
     url_prefix: furl = attr.ib()
     revisions: MoinEditEntries = attr.ib()
-    category_tree: Optional[PageTree] = attr.ib()
+    tree: PageTree = attr.ib()
     ctx = attr.ib(repr=False)
     #
     # smiley mapping
@@ -77,7 +76,7 @@ class Moin2Markdown:
             cache_directory: Path,
             url_prefix: str,
             revisions: MoinEditEntries,
-            category_tree: Optional[PageTree]
+            tree: PageTree
     ):
         """
         Build a translator object
@@ -87,7 +86,7 @@ class Moin2Markdown:
             cache_directory:  Path object for the cache directory
             url_prefix:       The base URL for the MoinMoin wiki
             revisions:        MoinEditEntries object for link resolution
-            category_tree:
+            tree:
         """
         #
         # Build a fetch cache
@@ -99,7 +98,7 @@ class Moin2Markdown:
             fetch_cache=fetch_cache,
             revisions=revisions,
             url_prefix=furl(url_prefix),
-            category_tree=category_tree,
+            tree=tree,
             ctx=ctx,
         )
 
@@ -131,7 +130,7 @@ class Moin2Markdown:
         # when category-folders mode is enabled, replace CategoryXxx with Xxx
         # for all known categories so converted pages use clean names
         if self.ctx.category_folders:
-            tree = self.category_tree
+            tree = self.tree
             if tree is not None:
                 for node in tree.category.children.values():
                     print(f"Replacing Category{node.name} with {node.name.encode()}")
@@ -211,7 +210,7 @@ class Moin2Markdown:
                                     current_p_category = new_url
 
                         # conventional link — rewrite or strip
-                        new_target = self.revisions.get_new_link_target(new_url)
+                        new_target = self.tree.get_new_link_target(new_url)
                         if new_target:
                             tag["href"] = new_target
                             self.ctx.logger.debug(f"Normal map -> {new_target}")
@@ -220,7 +219,7 @@ class Moin2Markdown:
                           and url.query.params["action"] == "AttachFile"
                     ):
                         attach_target = url.query.params["target"]
-                        new_target = self.revisions.get_new_attachment_link_target(
+                        new_target = self.tree.get_new_attachment_link_target(
                             new_url, attach_target,
                         )
                         if new_target:
@@ -251,9 +250,7 @@ class Moin2Markdown:
                             new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                             new_url = unquote(new_url)
                             attach_target = url.query.params["target"]
-                            new_target = self.revisions.get_new_attachment_link_target(
-                                new_url, attach_target,
-                            )
+                            new_target = self.tree.get_new_attachment_link_target(new_url, attach_target)
                             if new_target:
                                 tag["src"] = new_target
                                 self.ctx.logger.debug(f"Image mapped to {new_target}")

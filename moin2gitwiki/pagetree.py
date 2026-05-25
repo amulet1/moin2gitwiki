@@ -506,16 +506,22 @@ class PageTree:
 
         return page.get_attachment_path(attachment)
 
-    # FIXME
-    def markdown_page_name(self, moin_page_name: str) -> Optional[str]:
-        """Page name translated, using a category-resolved path when available"""
-        page = self.moin_name_to_node(True, moin_page_name)
-        if page is None:
-            self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
-            return None
+    def get_new_link_target(self, link) -> Optional[str]:
+        page = self.lookup_page(link)
+        if page:
+            # TODO: Create relative links
+            return page.get_path()
 
-        path = page.get_path()
+        print(f"WARNING: get_new_link_target: no map for {link}")
+        return None
 
-        ### self.logger.warning("markdown_page_name: name=%r path=%r", moin_page_name, path)
+    def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
+        page = self.lookup_page(link)
+        if page and page.has_attachment(attachment):
+            # TODO: Create relative links
+            destination = page.get_attachment_path(attachment)
+            self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
+            return destination
 
-        return path
+        self.logger.debug(f"Attachment: no map for {link} {attachment}")
+        return None

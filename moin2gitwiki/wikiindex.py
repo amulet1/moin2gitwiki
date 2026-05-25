@@ -6,12 +6,10 @@ from datetime import datetime
 from datetime import timedelta
 from enum import Enum
 from enum import auto
-from typing import List
-from urllib.parse import unquote
+from typing import List, Optional
 
 import attr
 
-from .pagepath import PagePath
 from .pagetree import PageTree
 from .users import Moin2GitUser
 
@@ -50,7 +48,7 @@ class MoinEditEntry:
     page_revision: str = attr.ib()
     edit_type: MoinEditType = attr.ib()
     page_name: str = attr.ib()
-    previous_page_name: str = attr.ib(default=None)
+    previous_page_name: Optional[str] = attr.ib(default=None)
     page_path: str = attr.ib()
     attachment: str = attr.ib(default=None)
     comment: str = attr.ib(default="")
@@ -86,9 +84,7 @@ class MoinEditEntries:
     """
 
     entries: List[MoinEditEntry] = attr.ib()
-    link_table: dict[str, str] = attr.ib()
-    attachment_link_table: dict[str, MoinEditEntry] = attr.ib()
-    category_tree: PageTree = attr.ib()
+    tree: PageTree = attr.ib()
     ctx = attr.ib(repr=False)
 
     @classmethod
@@ -96,8 +92,6 @@ class MoinEditEntries:
         pages_dir = os.path.join(ctx.moin_data, "pages")
         pages = os.listdir(pages_dir)
         epoch = datetime(1970, 1, 1)
-        attachment_link_table = {}
-        link_table = {}
 
         entries = []
         for page in pages:
@@ -164,23 +158,6 @@ class MoinEditEntries:
                 entries.append(entry)
                 previous_page_name = page_name
 
-                # TODO: Eliminate?
-                key = PagePath.moin_name_to_link(entry.page_name)
-                link_table[key] = page_name
-
-                # TODO: Eliminate?
-                if ed_type == MoinEditType.ATT_ADD:
-                    # use current page path (MoinMoin shows old revisions under current page name)
-                    # if same name attachment was modified multiple times only most recent addition will be captured
-                    # key = "\t".join([PagePath.moin_name_to_link(page_name), attachment])
-                    if page != page_name:
-                        print(
-                            f"WARNING: Attachment {attachment} on page {page} is not under the same name as the page it was attached to {page_name}")
-
-                    if entry.attachment_path().is_file():
-                        key = "\t".join([PagePath.moin_name_to_link(page), attachment])
-                        attachment_link_table[key] = entry
-
         ctx.logger.debug("Sorting edit entries")
         entries.sort(key=lambda x: x.edit_date)
 
@@ -188,59 +165,11 @@ class MoinEditEntries:
 
         return cls(
             entries=entries,
-            link_table=link_table,
-            attachment_link_table=attachment_link_table,
-            category_tree=tree,
+            tree=tree,
             ctx=ctx,
         )
 
     def count(self) -> int:
         return len(self.entries)
-
-    # FIXME
-    def get_new_link_target(self, link):
-        # FIXME: Eliminate link_table
-        link = unquote(link)
-        print(f"WARNING: get_new_link_target: {link}")
-
-        page_name = self.link_table.get(link)
-        if page_name:
-            # FIXME
-            return self.category_tree.markdown_page_name(page_name)
-
-        # FIXME:
-        print(f"WARNING: No link map for {link}")
-
-        return None
-
-    # FIXME
-    def get_new_attachment_link_target(self, link: str, attachment: str):
-        link = unquote(link)
-
-        print(f"WARNING: get_new_attachment_link_target: {link} {attachment}")
-        page = self.category_tree.lookup_page(link)
-
-        destination_new = page.get_attachment_path(attachment) if page and page.has_attachment(attachment) else None
-
-        key = "\t".join([link, attachment])
-        revision = self.attachment_link_table.get(key)
-        if revision:
-            destination = self.category_tree.attachment_destination(revision.page_name, revision.attachment)
-            if destination_new != destination:
-                print(f"ATT WARNING: new={destination_new} old={destination}")
-                print("KEYS: " + ", ".join(self.category_tree.page_map.keys()))
-
-            if destination:
-                self.ctx.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
-                return destination
-        else:
-            destination = None
-
-        if destination_new != destination:
-            print(f"ATT WARNING: new={destination_new} old={destination}")
-            print("KEYS: " + ", ".join(self.category_tree.page_map.keys()))
-
-        self.ctx.logger.debug(f"Attachment: no map for {link} {attachment}")
-        return None
 
 # end

@@ -269,7 +269,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
-        category_tree=tree
+        tree=tree
     )
     #
     # build the output git instance
@@ -277,7 +277,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     os.chdir(destination)
     subprocess.run(["git", "init"])
     with subprocess.Popen(["git", "fast-import"], stdin=subprocess.PIPE) as gitstream:
-        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page, category_tree=tree)
+        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page, tree=tree)
         ### FIXME:      with click.progressbar(revisions.entries) as entries:
         entries = revisions.entries
         if True:
@@ -343,7 +343,7 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
-        category_tree=tree
+        tree=tree
     )
     #
     # find the page and translate it
