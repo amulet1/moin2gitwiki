@@ -1,7 +1,7 @@
 import os
 import typing
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional, Dict
 
 import attr
 
@@ -60,7 +60,7 @@ class GitExportStream:
         print(f"cat={category} prev={revision.previous_page_name} att={revision.attachment}")
         print(tree)
 
-        file_ops = []
+        file_ops: Dict[str, int] = {}
 
         if revision.edit_type == MoinEditType.ATT_ADD:
             attachment_path = revision.attachment_path()
@@ -118,7 +118,7 @@ class GitExportStream:
         if self.home_page == "incremental" and revision.edit_type != MoinEditType.ATT_ADD:
             home_content = self._generate_home_content().encode("utf-8")
             home_blob = self.output_blob(home_content)
-            file_ops.append(f"M 100644 :{home_blob} Home.md\n")
+            file_ops["Home.md"] = home_blob
 
         self._emit_commit(revision, description, file_ops)
 
@@ -142,10 +142,9 @@ class GitExportStream:
         content += "\n----\n"
         return content
 
-    def emit_home_page(self):
-        """Emit a commit adding or updating Home.md from the current tree state."""
-
+    def prepare_home_page(self, file_ops: Dict[str, int]):
         page_name = "Home"
+
         page = self._tree.moin_name_to_node(True, page_name)
         assert page is not None
 
@@ -155,11 +154,18 @@ class GitExportStream:
             if not page.is_empty:
                 self.home_overwritten = True
 
+        # TODO: use add_side()
+        # TODO: time for incremental Home should come from the current revision
+
         content = self._generate_home_content().encode("utf-8")
         blob_ref = self.output_blob(content)
+        file_ops[page_name + ".md"] = blob_ref
 
-        # TODO: use add_side()
-        # TODO: time for incremental Home should come from the current revision?
+    def emit_home_page(self):
+        """Emit a commit adding or updating Home.md from the current tree state."""
+
+        file_ops: Dict[str, int] = {}
+        self.prepare_home_page(file_ops)
 
         revision = MoinEditEntry(
             edit_date=datetime.now(),
@@ -172,14 +178,13 @@ class GitExportStream:
             user=self.ctx.users.get_user_by_id_or_anonymous("0"),
             ctx=self.ctx,
         )
-
-        self._emit_commit(revision, "Update Home page", [f"M 100644 :{blob_ref} Home.md\n"])
+        self._emit_commit(revision, "Update Home page", file_ops)
 
     def _emit_commit(
             self,
             revision: MoinEditEntry,
             description: Optional[str],
-            file_ops: List[str],
+            file_ops: Dict[str, int],
     ):
         """Write a commit with the given file operations."""
         if self.last_commit_mark is None:
@@ -188,14 +193,23 @@ class GitExportStream:
         commit_ref = self.write_next_mark()
         self.write_changer("author", revision)
         self.write_changer("committer", revision)
+
         if revision.comment:
             self.output_data_string(f"{revision.comment}\n")
         else:
             self.output_data_string(f"{description}\n")
+
         if self.last_commit_mark is not None:
             self.write_string(f"from :{self.last_commit_mark}\n")
-        for op in file_ops:
+
+        for path, blob_mark in file_ops.items():
+            if blob_mark == 0:
+                op = f"D {path}\n"
+            else:
+                op = f"M 100644 :{blob_mark} {path}\n"
+
             self.write_string(op)
+
         self.write_string("\n")
         self.last_commit_mark = commit_ref
         self.ctx.logger.debug(f"Written commit {commit_ref}")

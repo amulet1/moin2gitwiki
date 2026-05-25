@@ -288,8 +288,10 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
                     content=content,
                     category=primary_category,
                 )
+
         if home_page == "end":
             export.emit_home_page()
+
         export.end_stream()
 
     if export.home_overwritten:

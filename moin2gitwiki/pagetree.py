@@ -16,7 +16,6 @@ Callers are responsible for:
 from __future__ import annotations
 
 import logging
-import sys
 from typing import Dict, Optional, List
 
 import attr
@@ -107,7 +106,7 @@ class Node:
         node = self
 
         parts: list = []
-        while node and node.name:
+        while node and node.name != "":
             parts.append(node.name)
             if use_category and node._category:
                 node = node._category
@@ -123,6 +122,7 @@ class Node:
     def add_attachment(self, attachment: str, blob_mark: Optional[int]):
         if self.attachments is None:
             self.attachments = {}
+
         self.attachments[attachment] = blob_mark
 
     def remove_attachment(self, attachment: str) -> Optional[int]:
@@ -136,46 +136,43 @@ class Node:
 
         return blob_mark
 
-    def update(self, category: Optional[Node], blob_mark: Optional[int], file_ops: Optional[List[str]]):
-        changed = category is not self._category or blob_mark is not self.blob_mark
-        if changed:
-            if file_ops is not None:
-                self.delete_page_ops(file_ops)
+    def update(self, category: Optional[Node], blob_mark: Optional[int], file_ops: dict[str, int]):
+        cat_changed = category is not self._category
+
+        self._collect_paths(False, cat_changed, file_ops)
 
         self.blob_mark = blob_mark
         self.update_category(category)
 
-    def update_category(self, new_category: Optional[Node]) -> bool:
+        self._collect_paths(True, cat_changed, file_ops)
+
+    def update_category(self, category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
-        if self._category is not new_category:
+        if self._category is not category:
             # category changed
             if self._category:
                 # remove node from old category
                 print(f"Removing node {self.name} from category {self._category.name}")
                 del self._category.children[self.name]
 
-            if new_category is not None:
+            if category is not None:
                 # check for collisions
-                if new_category.children.get(self.name) is None:
-                    print(f"Adding node {self.name} to category {new_category.name}")
-                    new_category.children[self.name] = self
+                if category.children.get(self.name) is None:
+                    print(f"Adding node {self.name} to category {category.name}")
+                    category.children[self.name] = self
                 else:
                     # collision
                     print(f"Warning: Collision in category tree: {self.name} already exists")
                     if self._category is None:
                         return False  # no change
 
-                    new_category = None
+                    category = None
 
             # update category reference
-            self._category = new_category
+            self._category = category
             return True
 
         return False
-
-    def erase(self):
-        self.blob_mark = None
-        self.update_category(None)
 
     def delete_empty_leaves(self):
         # clean up the tree
@@ -188,48 +185,22 @@ class Node:
             del parent.children[node.name]
             node = parent
 
-    def get_category(self):
-        return self._category
-
     # ------------------------------------------------------------------
     # Traversal
     # ------------------------------------------------------------------
 
-    def _collect_delete_paths(self, paths: List[str], node_path: str):
-        """Collect path for subtree deletion, leaves first.
+    def _collect_paths(self, add: bool, recurse: bool, paths: dict[str, int]):
+        """Collect path and blob_mark for subtree addition."""
+        stack: list[tuple[Node, str]] = [(self, self.get_path())]
+        while stack:
+            node, path = stack.pop()
+            if node.blob_mark is not None:
+                paths[path + ".md"] = node.blob_mark if add else 0
 
-        """
-        print(f"Collecting delete paths for {node_path}")
-        print("\n".join(self.dump(1)))
-
-        for name, node in self.children.items():
-            if node._category is None:
-                # FIXME: Remove print
-                print(f"{node_path}/{name}")
-                node._collect_delete_paths(paths, node_path + "/" + name)
-
-        if self.blob_mark is not None:
-            paths.append(node_path)
-
-    def _collect_add_paths(self, paths: List[tuple[str, int]], node_path: str):
-        """Collect (path, blob_mark) for subtree addition, leaves last.
-
-        """
-        print(f"Collecting add paths for {node_path}")
-        print("\n".join(self.dump(1)))
-
-        if self.blob_mark is not None:
-            paths.append((node_path, self.blob_mark))
-
-        for name, node in self.children.items():
-            if node._category is None:
-                # FIXME: Remove
-                print(f"{node_path}/{name}")
-                if self is node:
-                    print("ERROR: Self-reference")
-                    sys.exit(1)
-
-                node._collect_add_paths(paths, node_path + "/" + name)
+            if recurse:
+                for name, child in node.children.items():
+                    if child._category is None:
+                        stack.append((child, path + "/" + name))
 
     def collect_all_paths(self, paths: List[str], node_path: str):
         """Collect path for subtree addition, leaves last.
@@ -248,26 +219,6 @@ class Node:
             node.collect_all_paths(paths, path + "/" + name)
 
         return paths
-
-    def add_page_ops(self, file_ops: List[str]):
-        """Compute file ops for adding a node to the tree."""
-        node_prefix = self.get_path()
-
-        paths = []
-        self._collect_add_paths(paths, node_prefix)
-
-        for path, blob_mark in paths:
-            file_ops.append(f"M 100644 :{blob_mark} {path}.md\n")
-
-    def delete_page_ops(self, file_ops: List[str]):
-        """Compute file ops for removing a node from the tree."""
-        node_prefix = self.get_path()
-
-        paths = []
-        self._collect_delete_paths(paths, node_prefix)
-
-        for path in paths:
-            file_ops.append(f"D {path}.md\n")
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +313,7 @@ class PageTree:
 
     def add_page(
             self,
-            file_ops: List[str],
+            file_ops: dict[str, int],
             new: bool,
             moin_page_name: str,
             moin_page_path: str,
@@ -398,24 +349,17 @@ class PageTree:
                 self.logger.warning("add_node: page already exists (name=%r)", moin_page_name)
                 print(self)
 
-        # FIXME: update() should do it instead
-        if category is not page.get_category():
-            # category changed, delete page it and uncategorized children
-            page.delete_page_ops(file_ops)
-
-        page.update(category, blob_mark, None)
-
-        # FIXME: update() should do it instead
-        page.add_page_ops(file_ops)
+        page.update(category, blob_mark, file_ops)
 
         # move attachments from old page
         if old_page and old_page.attachments:
             if page.attachments is None:
                 print(
-                    f"WARNING: update_attachments: moving attachments {old_page.attachments} to {page.get_path(False)}")
-                page.attachments = old_page.attachments
+                    f"WARNING: add_page: moving attachments {old_page.attachments} to {page.get_path(False)}")
+                for attachment, blob_mark in old_page.attachments.items():
+                    page.attachments[attachment] = blob_mark
             else:
-                print(f"WARNING: update_attachments: attachments already exist on page {moin_page_name}")
+                print(f"ERROR: add_page: attachments already exist on page {page.get_path(False)}")
 
         # TODO: Make it part of moin_name_to_node
         # add mapping for links
@@ -425,24 +369,16 @@ class PageTree:
 
         return page
 
-    def delete_page(self, file_ops: List[str], moin_page_name: str, moin_page_path: Optional[str] = None) -> Optional[
+    def delete_page(self, file_ops: dict[str, int], moin_page_name: str,
+                    moin_page_path: Optional[str] = None) -> Optional[
         Node]:
         """Delete a node and return the deleted node."""
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None or page.is_empty:
             self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
         else:
-            old_category = page.get_category()
-            if old_category is not None:
-                page.delete_page_ops(file_ops)
-
             # mark node as deleted
-            # TODO: do file_ops here
-            page.erase()
-
-            if old_category is not None:
-                # readd children pages to new path
-                page.add_page_ops(file_ops)
+            page.update(None, None, file_ops)
 
             # clean up
             page.delete_empty_leaves()
@@ -454,7 +390,7 @@ class PageTree:
 
         return page
 
-    def add_attachment(self, file_ops: List[str], moin_page_name: str, moin_page_path: str, attachment: str,
+    def add_attachment(self, file_ops: dict[str, int], moin_page_name: str, moin_page_path: str, attachment: str,
                        blob_mark: Optional[int]):
         """Add an attachment to a node and return (path, blob_mark) for M commands.
         """
@@ -463,7 +399,7 @@ class PageTree:
         page.add_attachment(attachment, blob_mark)
         if blob_mark is not None:
             dest = page.get_attachment_path(attachment)
-            file_ops.append(f"M 100644 :{blob_mark} {dest}\n")
+            file_ops[dest] = blob_mark
 
         # TODO: Make it part of moin_name_to_node
         # add mapping for links
@@ -471,7 +407,7 @@ class PageTree:
         print(f"add_attachment: map[{path}] to {page.get_path(False)}")
         self.page_map[path] = page
 
-    def remove_attachment(self, file_ops: List[str], moin_page_name: str, attachment: str):
+    def remove_attachment(self, file_ops: dict[str, int], moin_page_name: str, attachment: str):
         """
         Removes an attachment from a specified MoinMoin page.
         """
@@ -482,7 +418,7 @@ class PageTree:
             blob_mark = page.remove_attachment(attachment)
             if blob_mark is not None:
                 dest = page.get_attachment_path(attachment)
-                file_ops.append(f"D {dest}\n")
+                file_ops[dest] = 0
 
     # FIXME
     def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
