@@ -133,7 +133,7 @@ class MoinEditEntries:
                         ed_type = MoinEditType.ATT_DEL
                     else:
                         # unrecognized edit_type - just move on
-                        print(f"WARNING: Unrecognized edit type {edit_type} on page {page}")
+                        ctx.logger.warning(f"Unrecognized edit type {edit_type} on page {page}")
                         continue
 
                 page_name = edit_fields[3]
@@ -152,8 +152,6 @@ class MoinEditEntries:
                     user=ctx.users.get_user_by_id_or_anonymous(edit_fields[6]),
                     ctx=ctx,
                 )
-                ctx.logger.warning(
-                    f"DEBUG: {entry.edit_date} {entry.page_revision} T={entry.edit_type} P={entry.page_path} N={entry.page_name} A={entry.attachment}")
 
                 entries.append(entry)
                 previous_page_name = page_name
