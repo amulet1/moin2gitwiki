@@ -243,11 +243,16 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     if spaces_to_hyphens is None:
         spaces_to_hyphens = not is_otterwiki
 
-    if subpages_as_dirs is None:
-        subpages_as_dirs = is_otterwiki
-
     if attachment_dir is None:
-        attachment_dir = "a" if is_otterwiki else "_attachments"
+        # TODO: Check if it starts with "/"
+        attachment_dir = "" if is_otterwiki else "_attachments"
+
+    if subpages_as_dirs is None:
+        if attachment_dir.startswith("/"):
+            attachment_dir = attachment_dir[1:]
+            subpages_as_dirs = False
+        else
+            subpages_as_dirs = is_otterwiki
 
     ctx.strip_dots = strip_dots
     ctx.spaces_to_hyphens = spaces_to_hyphens

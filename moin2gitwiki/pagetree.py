@@ -95,11 +95,11 @@ class Node:
         ctx = get_context()
         attachment_dir = ctx.attachment_dir
 
-        # TODO: Check if it starts with "/"
-        if ctx.subpages_as_dirs:
-            path = path + "/" + attachment_dir
-        else:
-            path = attachment_dir + "/" + path
+        if attachment_dir != "":
+            if ctx.subpages_as_dirs:
+                path += "/" + attachment_dir
+            else:
+                path = attachment_dir + "/" + path
 
         return path + "/" + attachment
 
