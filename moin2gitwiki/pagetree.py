@@ -150,6 +150,8 @@ class Node:
     def update(self, category: Optional[Node], blob_mark: int, file_ops: dict[str, int]):
         path_changed = category is not self._category
 
+        print(f"update: {self.name} changed={path_changed}")
+
         self._collect_paths(False, path_changed, file_ops)
 
         self.blob_mark = blob_mark
