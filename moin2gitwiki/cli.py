@@ -251,7 +251,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         if attachment_dir.startswith("/"):
             attachment_dir = attachment_dir[1:]
             subpages_as_dirs = False
-        else
+        else:
             subpages_as_dirs = is_otterwiki
 
     ctx.strip_dots = strip_dots
