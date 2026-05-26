@@ -152,7 +152,7 @@ class MoinEditEntries:
                     user=ctx.users.get_user_by_id_or_anonymous(edit_fields[6]),
                     ctx=ctx,
                 )
-                print(
+                ctx.logger.warning(
                     f"DEBUG: {entry.edit_date} {entry.page_revision} T={entry.edit_type} P={entry.page_path} N={entry.page_name} A={entry.attachment}")
 
                 entries.append(entry)
