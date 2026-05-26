@@ -23,6 +23,8 @@ import attr
 from moin2gitwiki.appcontext import get_context
 from moin2gitwiki.pagepath import PagePath
 
+NO_BLOB = 0
+
 
 # ---------------------------------------------------------------------------
 # Node
@@ -43,15 +45,15 @@ class Node:
     """
 
     name: str
-    children: Dict[str, Node] = attr.ib(repr=False)
     _parent: Optional[Node] = attr.ib(repr=False)
     _category: Optional[Node] = attr.ib(repr=False)
-    blob_mark: Optional[int] = None
-    attachments: Optional[Dict[str, Optional[int]]] = None
+    attachments: Optional[Dict[str, int]]
+    blob_mark: int
+    children: Dict[str, Node]
 
     def __init__(self, name: str, parent: Optional[Node] = None):
         self.name = name
-        self.blob_mark = None
+        self.blob_mark = NO_BLOB
         self.attachments = None
         self.children = {}
         self._parent = parent
@@ -59,7 +61,7 @@ class Node:
 
     @property
     def is_empty(self) -> bool:
-        if self.blob_mark is None:
+        if self.blob_mark == NO_BLOB:
             assert self._category is None
             # assert self.attachments is None
             return True
@@ -116,35 +118,44 @@ class Node:
         parts.reverse()
         return "/".join(parts)
 
-    def has_attachment(self, attachment: str) -> bool:
-        return self.attachments is not None and self.attachments.get(attachment) is not None
+    def get_attachment(self, attachment: str, remove: bool) -> int:
+        if self.attachments:
+            if remove:
+                blob_mark = self.attachments.pop(attachment, None)
+                if blob_mark is None:
+                    blob_mark = NO_BLOB
+                elif not self.attachments:
+                    self.attachments = None
+            else:
+                blob_mark = self.attachments.get(attachment, NO_BLOB)
+        else:
+            blob_mark = NO_BLOB
 
-    def add_attachment(self, attachment: str, blob_mark: Optional[int]):
+        return blob_mark
+
+    def add_attachment(self, attachment: str, blob_mark: int):
         if self.attachments is None:
             self.attachments = {}
 
         self.attachments[attachment] = blob_mark
 
-    def remove_attachment(self, attachment: str) -> Optional[int]:
-        if self.attachments is None or self.attachments.get(attachment) is None:
+    def remove_attachment(self, attachment: str) -> int:
+        blob_mark = self.get_attachment(attachment, True)
+        if blob_mark == NO_BLOB:
             print(f"WARNING: update_attachments: attachment {attachment} not found on page {self.get_path()}")
-            return None
-
-        blob_mark = self.attachments.pop(attachment, None)
-        if not self.attachments:
-            self.attachments = None
 
         return blob_mark
 
-    def update(self, category: Optional[Node], blob_mark: Optional[int], file_ops: dict[str, int]):
-        cat_changed = category is not self._category
+    def update(self, category: Optional[Node], blob_mark: int, file_ops: dict[str, int]):
+        path_changed = category is not self._category
 
-        self._collect_paths(False, cat_changed, file_ops)
+        self._collect_paths(False, path_changed, file_ops)
 
         self.blob_mark = blob_mark
+
         self.update_category(category)
 
-        self._collect_paths(True, cat_changed, file_ops)
+        self._collect_paths(True, path_changed, file_ops)
 
     def update_category(self, category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
@@ -194,10 +205,15 @@ class Node:
         stack: list[tuple[Node, str]] = [(self, self.get_path())]
         while stack:
             node, path = stack.pop()
-            if node.blob_mark is not None:
-                paths[path + ".md"] = node.blob_mark if add else 0
+            if node.blob_mark != NO_BLOB:
+                paths[path + ".md"] = node.blob_mark if add else NO_BLOB
 
             if recurse:
+                if node.attachments is not None:
+                    for attachment, blob_mark in node.attachments.items():
+                        if blob_mark != NO_BLOB:
+                            paths[attachment] = blob_mark if add else NO_BLOB
+
                 for name, child in node.children.items():
                     if child._category is None:
                         stack.append((child, path + "/" + name))
@@ -206,7 +222,7 @@ class Node:
         """Collect path for subtree addition, leaves last.
 
         """
-        if self.blob_mark is not None:
+        if not self.is_empty:
             paths.append(node_path)
 
         for name, node in self.children.items():
@@ -355,9 +371,12 @@ class PageTree:
         if old_page and old_page.attachments:
             if page.attachments is None:
                 print(
-                    f"WARNING: add_page: moving attachments {old_page.attachments} to {page.get_path(False)}")
-                for attachment, blob_mark in old_page.attachments.items():
-                    page.attachments[attachment] = blob_mark
+                    f"WARNING: add_page: moving attachments {old_page.get_path(False)} to {page.get_path(False)}")
+                page.attachments = {}
+                for attachment, b_mark in old_page.attachments.items():
+                    page.attachments[attachment] = b_mark
+                    if b_mark != NO_BLOB:
+                        file_ops[attachment] = b_mark
             else:
                 print(f"ERROR: add_page: attachments already exist on page {page.get_path(False)}")
 
@@ -378,7 +397,7 @@ class PageTree:
             self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
         else:
             # mark node as deleted
-            page.update(None, None, file_ops)
+            page.update(None, 0, file_ops)
 
             # clean up
             page.delete_empty_leaves()
@@ -391,13 +410,14 @@ class PageTree:
         return page
 
     def add_attachment(self, file_ops: dict[str, int], moin_page_name: str, moin_page_path: str, attachment: str,
-                       blob_mark: Optional[int]):
+                       blob_mark: int):
         """Add an attachment to a node and return (path, blob_mark) for M commands.
         """
         page = self.moin_name_to_node(True, moin_page_name)
         assert page is not None
+
         page.add_attachment(attachment, blob_mark)
-        if blob_mark is not None:
+        if blob_mark != NO_BLOB:
             dest = page.get_attachment_path(attachment)
             file_ops[dest] = blob_mark
 
@@ -416,7 +436,7 @@ class PageTree:
             self.logger.warning(f"remove_attachment: page does not exist (name={moin_page_name})")
         else:
             blob_mark = page.remove_attachment(attachment)
-            if blob_mark is not None:
+            if blob_mark != NO_BLOB:
                 dest = page.get_attachment_path(attachment)
                 file_ops[dest] = 0
 
@@ -453,7 +473,7 @@ class PageTree:
 
     def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
         page = self.lookup_page(link)
-        if page and page.has_attachment(attachment):
+        if page and page.get_attachment(attachment, False) != NO_BLOB:
             # TODO: Create relative links
             destination = page.get_attachment_path(attachment)
             self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")

@@ -5,7 +5,7 @@ from typing import Optional, Dict
 
 import attr
 
-from .pagetree import PageTree
+from .pagetree import PageTree, NO_BLOB
 from .wikiindex import MoinEditEntry
 from .wikiindex import MoinEditType
 
@@ -68,7 +68,7 @@ class GitExportStream:
                 data = attachment_path.read_bytes()
                 blob_ref = self.output_blob(data)
             else:
-                blob_ref = None
+                blob_ref = NO_BLOB
             tree.add_attachment(file_ops, revision.page_name, revision.page_path, revision.attachment, blob_ref)
             description = f"Attach {revision.attachment} to {revision.page_name}"
         elif revision.edit_type == MoinEditType.ATT_DEL:
@@ -90,22 +90,21 @@ class GitExportStream:
             else:
                 old_page = tree.delete_page(file_ops, revision.previous_page_name)
 
-            page = tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_page)
+            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_page)
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_ADD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            page = tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref)
+            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref)
             description = f"Add {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_UPD:
             if content is None:
                 return
             blob_ref = self.output_blob(content)
-            page = tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
-
+            tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
             description = f"Update {revision.page_name}"
 
         else:
@@ -203,7 +202,7 @@ class GitExportStream:
             self.write_string(f"from :{self.last_commit_mark}\n")
 
         for path, blob_mark in file_ops.items():
-            if blob_mark == 0:
+            if blob_mark == NO_BLOB:
                 op = f"D {path}\n"
             else:
                 op = f"M 100644 :{blob_mark} {path}\n"
