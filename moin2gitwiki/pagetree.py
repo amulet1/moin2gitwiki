@@ -88,8 +88,9 @@ class Node:
     # Path computation
     # ------------------------------------------------------------------
 
-    def get_attachment_path(self, attachment: str) -> str:
-        path = self.get_path()
+    def get_attachment_path(self, attachment: str, path: str = "") -> str:
+        if path == "":
+            path = self.get_path()
 
         ctx = get_context()
         attachment_dir = ctx.attachment_dir
@@ -152,7 +153,6 @@ class Node:
         self._collect_paths(False, path_changed, file_ops)
 
         self.blob_mark = blob_mark
-
         self.update_category(category)
 
         self._collect_paths(True, path_changed, file_ops)
@@ -212,7 +212,7 @@ class Node:
                 if node.attachments is not None:
                     for attachment, blob_mark in node.attachments.items():
                         if blob_mark != NO_BLOB:
-                            paths[attachment] = blob_mark if add else NO_BLOB
+                            paths[self.get_attachment_path(attachment, path)] = blob_mark if add else NO_BLOB
 
                 for name, child in node.children.items():
                     if child._category is None:
@@ -373,10 +373,11 @@ class PageTree:
                 print(
                     f"WARNING: add_page: moving attachments {old_page.get_path(False)} to {page.get_path(False)}")
                 page.attachments = {}
+                path = page.get_path()
                 for attachment, b_mark in old_page.attachments.items():
                     page.attachments[attachment] = b_mark
                     if b_mark != NO_BLOB:
-                        file_ops[attachment] = b_mark
+                        file_ops[page.get_attachment_path(attachment, path)] = b_mark
             else:
                 print(f"ERROR: add_page: attachments already exist on page {page.get_path(False)}")
 
