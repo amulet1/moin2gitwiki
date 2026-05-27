@@ -134,13 +134,13 @@ class Node:
 
         return blob_mark
 
-    def add_attachment(self, file_ops: dict[str, int], attachment: str, blob_mark: int):
+    def add_attachment(self, file_ops: dict[str, int], attachment: str, blob_mark: int, path: str = ""):
         if self.attachments is None:
             self.attachments = {}
 
         self.attachments[attachment] = blob_mark
         if blob_mark != NO_BLOB:
-            dest = self.get_attachment_path(attachment)
+            dest = self.get_attachment_path(attachment, path)
             file_ops[dest] = blob_mark
 
     def remove_attachment(self, file_ops: dict[str, int], attachment: str):
@@ -151,7 +151,7 @@ class Node:
             dest = self.get_attachment_path(attachment)
             file_ops[dest] = NO_BLOB
 
-    def update(self, category: Optional[Node], blob_mark: int, file_ops: dict[str, int]):
+    def update(self, file_ops: dict[str, int], category: Optional[Node], blob_mark: int) -> Optional[dict[str, int]]:
         path_changed = category is not self._category
 
         print(f"update: {self.name} changed={path_changed}")
@@ -161,7 +161,15 @@ class Node:
         self.blob_mark = blob_mark
         self.update_category(category)
 
+        if blob_mark == NO_BLOB:
+            attachments = self.attachments
+            self.attachments = None
+        else:
+            attachments = None
+
         self._collect_paths(True, path_changed, file_ops)
+
+        return attachments
 
     def update_category(self, category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
@@ -341,7 +349,7 @@ class PageTree:
             moin_page_path: str,
             moin_category_name: Optional[str],
             blob_mark: int,
-            old_page: Optional[Node] = None
+            old_attachments: Optional[dict[str, int]] = None
     ) -> Node:
         """Add or update a node and return (path, blob_mark) for M commands.
 
@@ -363,27 +371,22 @@ class PageTree:
         if page.is_empty:
             # page does not exist
             if not new:
-                self.logger.warning("add_node: page expected to exist (name=%r)", moin_page_name)
+                self.logger.warning("add_page: page expected to exist (name=%r)", moin_page_name)
                 print(self)
         else:
             # existing page
             if new:
-                self.logger.warning("add_node: page already exists (name=%r)", moin_page_name)
+                self.logger.warning("add_page: page already exists (name=%r)", moin_page_name)
                 print(self)
 
-        page.update(category, blob_mark, file_ops)
+        page.update(file_ops, category, blob_mark)
 
         # move attachments from old page
-        if old_page and old_page.attachments:
+        if old_attachments:
             if page.attachments is None:
-                print(
-                    f"WARNING: add_page: moving attachments {old_page.get_path(False)} to {page.get_path(False)}")
-                page.attachments = {}
                 path = page.get_path()
-                for attachment, b_mark in old_page.attachments.items():
-                    page.attachments[attachment] = b_mark
-                    if b_mark != NO_BLOB:
-                        file_ops[page.get_attachment_path(attachment, path)] = b_mark
+                for attachment, b_mark in old_attachments.items():
+                    page.add_attachment(file_ops, attachment, b_mark, path)
             else:
                 print(f"ERROR: add_page: attachments already exist on page {page.get_path(False)}")
 
@@ -395,16 +398,20 @@ class PageTree:
 
         return page
 
-    def delete_page(self, file_ops: dict[str, int], moin_page_name: str,
-                    moin_page_path: Optional[str] = None) -> Optional[
-        Node]:
+    def delete_page(
+            self,
+            file_ops: dict[str, int],
+            moin_page_name: str,
+            moin_page_path: Optional[str] = None
+    ) -> Optional[dict[str, int]]:
         """Delete a node and return the deleted node."""
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None or page.is_empty:
             self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
+            attachments = None
         else:
             # mark node as deleted
-            page.update(None, 0, file_ops)
+            attachments = page.update(file_ops, None, NO_BLOB)
 
             # clean up
             page.delete_empty_leaves()
@@ -414,7 +421,7 @@ class PageTree:
             # TODO: Warn if it does not exist
             self.page_map.pop(path, None)
 
-        return page
+        return attachments
 
     def add_attachment(self, file_ops: dict[str, int], moin_page_name: str, moin_page_path: str, attachment: str,
                        blob_mark: int):

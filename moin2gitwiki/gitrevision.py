@@ -86,11 +86,11 @@ class GitExportStream:
 
             if revision.previous_page_name is None:
                 # TODO: Warning
-                old_page = None
+                old_attachments = None
             else:
-                old_page = tree.delete_page(file_ops, revision.previous_page_name)
+                old_attachments = tree.delete_page(file_ops, revision.previous_page_name)
 
-            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_page)
+            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_attachments)
             description = f"Rename {revision.previous_page_name} to {revision.page_name}"
 
         elif revision.edit_type == MoinEditType.PAGE_ADD:
