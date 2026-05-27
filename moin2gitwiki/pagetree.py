@@ -167,6 +167,9 @@ class Node:
 
         self._collect_paths(True, path_changed, path_changed and not deleted, file_ops)
 
+        # clean up
+        self.delete_empty_leaves()
+
         return self.attachments
 
     def update_category(self, category: Optional[Node]) -> bool:
@@ -296,7 +299,7 @@ class PageTree:
         lines.append("Categories:")
 
         for node in sorted(self.category.children.values(), key=lambda n: n.name):
-            lines.extend(node.dump(True, 1))
+            lines.extend(node.dump(False, 1))
 
         return "\n".join(lines)
 
@@ -412,9 +415,6 @@ class PageTree:
         else:
             # mark node as deleted
             attachments = page.update(file_ops, None, NO_BLOB)
-
-            # clean up
-            page.delete_empty_leaves()
 
         if moin_page_path is not None:
             path = PagePath.moin_name_to_link(moin_page_path)
