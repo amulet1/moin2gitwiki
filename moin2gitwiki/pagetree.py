@@ -134,18 +134,22 @@ class Node:
 
         return blob_mark
 
-    def add_attachment(self, attachment: str, blob_mark: int):
+    def add_attachment(self, file_ops: dict[str, int], attachment: str, blob_mark: int):
         if self.attachments is None:
             self.attachments = {}
 
         self.attachments[attachment] = blob_mark
+        if blob_mark != NO_BLOB:
+            dest = self.get_attachment_path(attachment)
+            file_ops[dest] = blob_mark
 
-    def remove_attachment(self, attachment: str) -> int:
+    def remove_attachment(self, file_ops: dict[str, int], attachment: str):
         blob_mark = self.get_attachment(attachment, True)
         if blob_mark == NO_BLOB:
             print(f"WARNING: update_attachments: attachment {attachment} not found on page {self.get_path()}")
-
-        return blob_mark
+        else:
+            dest = self.get_attachment_path(attachment)
+            file_ops[dest] = NO_BLOB
 
     def update(self, category: Optional[Node], blob_mark: int, file_ops: dict[str, int]):
         path_changed = category is not self._category
@@ -163,6 +167,7 @@ class Node:
         """Update the category reference, return True if changed."""
         if self._category is not category:
             # category changed
+            # FIXME: Address possible name collisions (node can be in children due to category or parent or both!)
             if self._category:
                 # remove node from old category
                 print(f"Removing node {self.name} from category {self._category.name}")
@@ -217,8 +222,7 @@ class Node:
                             paths[self.get_attachment_path(attachment, path)] = blob_mark if add else NO_BLOB
 
                 for name, child in node.children.items():
-                    if child._category is None:
-                        stack.append((child, path + "/" + name))
+                    stack.append((child, path + "/" + name))
 
     def collect_all_paths(self, paths: List[str], node_path: str):
         """Collect path for subtree addition, leaves last.
@@ -419,10 +423,7 @@ class PageTree:
         page = self.moin_name_to_node(True, moin_page_name)
         assert page is not None
 
-        page.add_attachment(attachment, blob_mark)
-        if blob_mark != NO_BLOB:
-            dest = page.get_attachment_path(attachment)
-            file_ops[dest] = blob_mark
+        page.add_attachment(file_ops, attachment, blob_mark)
 
         # TODO: Make it part of moin_name_to_node
         # add mapping for links
@@ -438,10 +439,7 @@ class PageTree:
         if page is None:
             self.logger.warning(f"remove_attachment: page does not exist (name={moin_page_name})")
         else:
-            blob_mark = page.remove_attachment(attachment)
-            if blob_mark != NO_BLOB:
-                dest = page.get_attachment_path(attachment)
-                file_ops[dest] = 0
+            page.remove_attachment(file_ops, attachment)
 
     # FIXME
     def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
