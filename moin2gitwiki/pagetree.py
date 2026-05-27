@@ -83,7 +83,7 @@ class Node:
             result.append(f"{prefix}    c: {self._category.get_path(False)}")
 
         for child in sorted(self.children.values(), key=lambda n: n.name):
-            result.extend(child.dump(with_category, indent + 1))
+            result.extend(child.dump(no_category, indent + 1))
 
         return result
 
