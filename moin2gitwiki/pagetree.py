@@ -153,15 +153,16 @@ class Node:
 
     def update(self, file_ops: dict[str, int], category: Optional[Node], blob_mark: int) -> Optional[dict[str, int]]:
         path_changed = category is not self._category
+        deleted = blob_mark == NO_BLOB
 
-        print(f"update: {self.name} changed={path_changed}")
+        print(f"update: {self.name} changed={path_changed} deleted={deleted}")
 
-        self._collect_paths(False, path_changed, file_ops)
+        self._collect_paths(False, path_changed, path_changed or deleted, file_ops)
 
         self.blob_mark = blob_mark
         self.update_category(category)
 
-        self._collect_paths(True, path_changed, file_ops)
+        self._collect_paths(True, path_changed, path_changed and not deleted, file_ops)
 
         return self.attachments
 
@@ -209,14 +210,9 @@ class Node:
     # Traversal
     # ------------------------------------------------------------------
 
-    def _collect_paths(self, add: bool, recurse: bool, paths: dict[str, int]):
+    def _collect_paths(self, add: bool, recurse: bool, process_attachments: bool, paths: dict[str, int]):
         """Collect path and blob_mark for subtree addition."""
         stack: list[tuple[Node, str]] = [(self, self.get_path())]
-
-        if add:
-            process_attachments = recurse and not self.is_empty
-        else:
-            process_attachments = recurse or self.is_empty
 
         while stack:
             node, path = stack.pop()
