@@ -161,15 +161,9 @@ class Node:
         self.blob_mark = blob_mark
         self.update_category(category)
 
-        if blob_mark == NO_BLOB:
-            attachments = self.attachments
-            self.attachments = None
-        else:
-            attachments = None
-
         self._collect_paths(True, path_changed, file_ops)
 
-        return attachments
+        return self.attachments
 
     def update_category(self, category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
@@ -218,17 +212,24 @@ class Node:
     def _collect_paths(self, add: bool, recurse: bool, paths: dict[str, int]):
         """Collect path and blob_mark for subtree addition."""
         stack: list[tuple[Node, str]] = [(self, self.get_path())]
+
+        if add:
+            process_attachments = recurse and not self.is_empty
+        else:
+            process_attachments = recurse or self.is_empty
+
         while stack:
             node, path = stack.pop()
             if node.blob_mark != NO_BLOB:
                 paths[path + ".md"] = node.blob_mark if add else NO_BLOB
 
-            if recurse:
-                if node.attachments is not None:
-                    for attachment, blob_mark in node.attachments.items():
-                        if blob_mark != NO_BLOB:
-                            paths[self.get_attachment_path(attachment, path)] = blob_mark if add else NO_BLOB
+            if process_attachments and node.attachments is not None:
+                for attachment, blob_mark in node.attachments.items():
+                    if blob_mark != NO_BLOB:
+                        paths[self.get_attachment_path(attachment, path)] = blob_mark if add else NO_BLOB
 
+            if recurse:
+                process_attachments = True
                 for name, child in node.children.items():
                     stack.append((child, path + "/" + name))
 
@@ -350,7 +351,7 @@ class PageTree:
             moin_category_name: Optional[str],
             blob_mark: int,
             old_attachments: Optional[dict[str, int]] = None
-    ) -> Node:
+    ):
         """Add or update a node and return (path, blob_mark) for M commands.
 
         Finds an existing node or creates a new one.
@@ -365,7 +366,7 @@ class PageTree:
         if moin_category_name is None:
             category = None
         else:
-            print(f"add_side: category={moin_category_name}")
+            print(f"add_page: category={moin_category_name}")
             category = self.moin_name_to_node(True, moin_category_name, force_category=True)
 
         if page.is_empty:
@@ -396,8 +397,6 @@ class PageTree:
         print(f"add_page: map[{path}] to {page.get_path(False)}")
         self.page_map[path] = page
 
-        return page
-
     def delete_page(
             self,
             file_ops: dict[str, int],
@@ -405,6 +404,8 @@ class PageTree:
             moin_page_path: Optional[str] = None
     ) -> Optional[dict[str, int]]:
         """Delete a node and return the deleted node."""
+        print(f"delete_page: name={moin_page_name} page={moin_page_path}")
+
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None or page.is_empty:
             self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
@@ -419,6 +420,7 @@ class PageTree:
         if moin_page_path is not None:
             path = PagePath.moin_name_to_link(moin_page_path)
             # TODO: Warn if it does not exist
+            print(f"delete_page: remove map[{path}]")
             self.page_map.pop(path, None)
 
         return attachments
