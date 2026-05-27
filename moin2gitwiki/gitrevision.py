@@ -207,7 +207,6 @@ class GitExportStream:
             else:
                 op = f"M 100644 :{blob_mark} {path}\n"
 
-            print(f"emit_commit: {op}")
             self.write_string(op)
 
         self.write_string("\n")

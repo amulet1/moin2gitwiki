@@ -68,7 +68,10 @@ class Node:
 
         return False
 
-    def dump(self, indent: int = 0) -> List[str]:
+    def dump(self, no_category: bool, indent: int = 0) -> List[str]:
+        if no_category and self._category:
+            return []
+
         prefix = "  " * indent
 
         result = [
@@ -80,7 +83,7 @@ class Node:
             result.append(f"{prefix}    c: {self._category.get_path(False)}")
 
         for child in sorted(self.children.values(), key=lambda n: n.name):
-            result.extend(child.dump(indent + 1))
+            result.extend(child.dump(with_category, indent + 1))
 
         return result
 
@@ -287,13 +290,13 @@ class PageTree:
         lines.append("Regular pages:")
 
         for node in sorted(self.regular.children.values(), key=lambda n: n.name):
-            lines.extend(node.dump(1))
+            lines.extend(node.dump(True, 1))
 
         lines.append("")
         lines.append("Categories:")
 
         for node in sorted(self.category.children.values(), key=lambda n: n.name):
-            lines.extend(node.dump(1))
+            lines.extend(node.dump(True, 1))
 
         return "\n".join(lines)
 
