@@ -283,9 +283,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     subprocess.run(["git", "init"])
     with subprocess.Popen(["git", "fast-import"], stdin=subprocess.PIPE) as gitstream:
         export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page, tree=tree)
-        ### FIXME:      with click.progressbar(revisions.entries) as entries:
-        entries = revisions.entries
-        if True:
+        with click.progressbar(revisions.entries) as entries:
             for revision in entries:
                 content, primary_category = translator.retrieve_and_translate(revision=revision)
                 export.add_wiki_revision(
