@@ -485,9 +485,11 @@ class PageTree:
         page = self.lookup_page(link)
         if page:
             # TODO: Create relative links
-            return page.get_path()
+            destination = "/" + page.get_path()
+            self.logger.debug(f"{link} -> {destination}")
+            return destination
 
-        print(f"WARNING: get_new_link_target: no map for {link}")
+        self.logger.warning(f"WARNING: get_new_link_target: no map for {link}")
         return None
 
     def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
@@ -496,7 +498,7 @@ class PageTree:
             blob_mark = page.get_attachment(attachment, False)
             if blob_mark is not None and blob_mark != NO_BLOB:
                 # TODO: Create relative links
-                destination = page.get_attachment_path(attachment)
+                destination = "/" + page.get_attachment_path(attachment)
                 self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
                 return destination
 
