@@ -185,15 +185,15 @@ class Node:
         if self._category is not category:
             # category changed
             node = self._category
-            # Check for name collisions (node can be in children due to category or parent or both!)
+            # Check for name collisions (node can be in children due to category or parent or both)
             if node and self._parent is not node:
                 # remove node from old category
                 self.logger.warning(f"Removing node {self.name} from category {node.name}")
                 del node.children[self.name]
                 node.delete_empty_leaves()
 
-            if category is not None:
-                # check for collisions
+            # Check for name collisions (category can be same as parent)
+            if category is not self._parent and category is not None:
                 if category.children.get(self.name) is None:
                     print(f"Adding node {self.name} to category {category.name}")
                     category.children[self.name] = self
