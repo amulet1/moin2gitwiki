@@ -459,7 +459,7 @@ class PageTree:
             self.logger.debug(f"{link} -> {destination}")
             return quote(destination, safe="/")
 
-        self.logger.warning(f"no map for link {link}")
+        self.logger.debug(f"no map for link {link}")
         return None
 
     def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
