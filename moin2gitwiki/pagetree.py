@@ -189,7 +189,7 @@ class Node:
             # Check for name collisions (node can be in children due to category or parent or both)
             if node and self._parent is not node:
                 # remove node from old category
-                self.logger.warning(f"Removing node {self.name} from category {node.name}")
+                self.logger.warning(f"removing node {self.name} from category {node.get_path(False)}")
                 del node.children[self.name]
                 node.delete_empty_leaves()
 

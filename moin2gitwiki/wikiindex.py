@@ -7,6 +7,7 @@ from datetime import timedelta
 from enum import Enum
 from enum import auto
 from typing import List, Optional
+from urllib.parse import unquote
 
 import attr
 
@@ -137,7 +138,7 @@ class MoinEditEntries:
                         continue
 
                 page_name = edit_fields[3]
-                attachment = edit_fields[7]
+                attachment = unquote(edit_fields[7])
                 comment = edit_fields[8]
 
                 entry = MoinEditEntry(
