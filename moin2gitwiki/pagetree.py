@@ -68,6 +68,10 @@ class Node:
 
         return False
 
+    @property
+    def logger(self) -> logging.Logger:
+        return get_context().logger
+
     def dump(self, no_category: bool, indent: int = 0) -> List[str]:
         if no_category and self._category:
             return []
@@ -165,22 +169,30 @@ class Node:
         self.blob_mark = blob_mark
         self.update_category(category)
 
-        self._collect_paths(True, path_changed, path_changed and not deleted, file_ops)
+        if deleted:
+            assert category is None
+            # clean up
+            attachments = self.attachments
+            self.attachments = None
+            self.delete_empty_leaves()
+        else:
+            attachments = None
 
-        # clean up
-        self.delete_empty_leaves()
+        self._collect_paths(True, path_changed, path_changed, file_ops)
 
-        return self.attachments
+        return attachments
 
     def update_category(self, category: Optional[Node]) -> bool:
         """Update the category reference, return True if changed."""
         if self._category is not category:
             # category changed
-            # FIXME: Address possible name collisions (node can be in children due to category or parent or both!)
-            if self._category:
+            node = self._category
+            # Check for name collisions (node can be in children due to category or parent or both!)
+            if node and self._parent is not node:
                 # remove node from old category
-                print(f"Removing node {self.name} from category {self._category.name}")
-                del self._category.children[self.name]
+                self.logger.warning(f"Removing node {self.name} from category {node.name}")
+                del node.children[self.name]
+                node.delete_empty_leaves()
 
             if category is not None:
                 # check for collisions
@@ -204,7 +216,7 @@ class Node:
     def delete_empty_leaves(self):
         # clean up the tree
         node = self
-        while node.is_empty and node._parent and not node.children:
+        while node.is_empty and node._parent and not node.children and not node.attachments:
             # no children, we can delete the node
             print(f"Deleting node {node.name} with no children")
             parent = node._parent
