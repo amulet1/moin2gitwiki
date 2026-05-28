@@ -126,18 +126,16 @@ class Node:
         parts.reverse()
         return "/".join(parts)
 
-    def get_attachment(self, attachment: str, remove: bool) -> int:
+    def get_attachment(self, attachment: str, remove: bool) -> Optional[int]:
         if self.attachments:
             if remove:
                 blob_mark = self.attachments.pop(attachment, None)
-                if blob_mark is None:
-                    blob_mark = NO_BLOB
-                elif not self.attachments:
+                if blob_mark is not None and not self.attachments:
                     self.attachments = None
             else:
-                blob_mark = self.attachments.get(attachment, NO_BLOB)
+                blob_mark = self.attachments.get(attachment, None)
         else:
-            blob_mark = NO_BLOB
+            blob_mark = None
 
         return blob_mark
 
@@ -152,9 +150,9 @@ class Node:
 
     def remove_attachment(self, file_ops: dict[str, int], attachment: str):
         blob_mark = self.get_attachment(attachment, True)
-        if blob_mark == NO_BLOB:
-            print(f"WARNING: update_attachments: attachment {attachment} not found on page {self.get_path()}")
-        else:
+        if blob_mark is None:
+            self.logger.warning(f"attachment {attachment} not found on page {self.get_path()}")
+        elif blob_mark != NO_BLOB:
             dest = self.get_attachment_path(attachment)
             file_ops[dest] = NO_BLOB
 
@@ -494,11 +492,13 @@ class PageTree:
 
     def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
         page = self.lookup_page(link)
-        if page and page.get_attachment(attachment, False) != NO_BLOB:
-            # TODO: Create relative links
-            destination = page.get_attachment_path(attachment)
-            self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
-            return destination
+        if page:
+            blob_mark = page.get_attachment(attachment, False)
+            if blob_mark is not None and blob_mark != NO_BLOB:
+                # TODO: Create relative links
+                destination = page.get_attachment_path(attachment)
+                self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
+                return destination
 
         self.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
