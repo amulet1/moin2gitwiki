@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, Optional, List
+from urllib.parse import quote
 
 import attr
 
@@ -487,7 +488,7 @@ class PageTree:
             # TODO: Create relative links
             destination = "/" + page.get_path()
             self.logger.debug(f"{link} -> {destination}")
-            return destination
+            return quote(destination, safe="/")
 
         self.logger.warning(f"WARNING: get_new_link_target: no map for {link}")
         return None
@@ -500,7 +501,7 @@ class PageTree:
                 # TODO: Create relative links
                 destination = "/" + page.get_attachment_path(attachment)
                 self.logger.debug(f"Attachment: {link} {attachment} -> {destination}")
-                return destination
+                return quote(destination, safe="/")
 
         self.logger.debug(f"Attachment: no map for {link} {attachment}")
         return None
