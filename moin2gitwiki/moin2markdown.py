@@ -265,7 +265,10 @@ class Moin2Markdown:
             elif tag.name == "input":
                 tag.decompose()
             elif tag.name == "div":
-                tag.unwrap()
+                if tag.get("id") == "message":
+                    tag.decompose()
+                else:
+                    tag.unwrap()
 
         # commit last paragraph's category
         if current_p_category is not None:
