@@ -2,7 +2,7 @@
 moin2gitwiki context object - carries state between components
 
 This contains the basic context object, which has various global
-state information in it such as the logging objects.
+state information in it, such as the logging objects.
 """
 import logging.handlers
 import sys
@@ -12,7 +12,6 @@ from typing import Dict
 import attr
 
 from .users import Moin2GitUserSet
-
 
 LOG_FILE = "moin2gitwiki.log"
 FILE_FORMATTER = logging.Formatter(
@@ -27,16 +26,16 @@ SYSLOG_FORMATTER = logging.Formatter("%(name)s: [%(levelname)s] %(message)s")
 @attr.s(kw_only=True, slots=True)
 class Moin2GitContext:
     """
-    Moin2GitContext Context Object - holds state, logging, etc
+    Moin2GitContext Context Object - holds state, logging, etc.
 
     Called from the cli code.  Sets up all the common requirements.
 
     Attributes:
-        debug:      if true we output more debugging chatter
-        verbose:    if true we output more progress information
-        syslog:     if true we additionally log to syslog at debug level
+        debug:      if true, we output more debugging chatter
+        verbose:    if true, we output more progress information
+        syslog:     if true, we additionally log to syslog at debug level
         logger:     Logging object
-        moin_data:  Path of the MoinMoin data directory
+        _moin_data: Path of the MoinMoin data directory
         users:      Moin user set object
 
     """
@@ -55,7 +54,6 @@ class Moin2GitContext:
     wiki_type: str = attr.ib(default="gollum")
     log_file: str = attr.ib(default=LOG_FILE)
     category_folders: bool = attr.ib(default=False)
-    category_tree = attr.ib(default=None)  # CategoryTree, set by GitExportStream
 
     @property
     def moin_data(self):
@@ -154,6 +152,5 @@ class Moin2GitContext:
             syslog_handler.setFormatter(SYSLOG_FORMATTER)
             logger.addHandler(syslog_handler)
         logger.addHandler(self.get_file_handler())
-
 
 # end

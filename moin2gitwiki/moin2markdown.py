@@ -1,13 +1,15 @@
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
+from urllib.parse import unquote
 
 import attr
 from bs4 import BeautifulSoup
 from furl import furl
 
 from .fetch_cache import FetchCache
+from .pagepath import PagePath
+from .pagetree import PageTree
 from .wikiindex import MoinEditEntries
 from .wikiindex import MoinEditEntry
 
@@ -21,7 +23,7 @@ class Moin2Markdown:
         fetch_cache:    A FetchCache object used to retrieve URLs
         url_prefix:     The URL prefix of the Moin wiki web presence
         revisions:      MoinEditEntries object for link resolution
-        ctx:            Context object - logger and user mapping etc
+        ctx:            Context object - logger and user mapping etc.
     """
 
     #
@@ -29,6 +31,7 @@ class Moin2Markdown:
     fetch_cache: FetchCache = attr.ib()
     url_prefix: furl = attr.ib()
     revisions: MoinEditEntries = attr.ib()
+    tree: PageTree = attr.ib()
     ctx = attr.ib(repr=False)
     #
     # smiley mapping
@@ -68,21 +71,22 @@ class Moin2Markdown:
 
     @classmethod
     def create_translator(
-        cls,
-        ctx,
-        cache_directory: Path,
-        url_prefix: str,
-        revisions: MoinEditEntries,
+            cls,
+            ctx,
+            cache_directory: Path,
+            url_prefix: str,
+            revisions: MoinEditEntries,
+            tree: PageTree
     ):
         """
         Build a translator object
 
         Parameters:
-            ctx:              Context object (logger etc)
+            ctx:              Context object (logger etc.)
             cache_directory:  Path object for the cache directory
             url_prefix:       The base URL for the MoinMoin wiki
             revisions:        MoinEditEntries object for link resolution
-
+            tree:
         """
         #
         # Build a fetch cache
@@ -94,42 +98,43 @@ class Moin2Markdown:
             fetch_cache=fetch_cache,
             revisions=revisions,
             url_prefix=furl(url_prefix),
+            tree=tree,
             ctx=ctx,
         )
 
-    def retrieve_and_translate(self, revision: MoinEditEntry, skip=None):
+    def retrieve_and_translate(self, revision: MoinEditEntry):
         """
-        Retrieve a wiki revision, and translate it to markdown
+        Retrieve a wiki revision and translate it to Markdown
 
         Parameters:
             revision:    The wiki revision object for the revision we want
-            skip:        Category name to skip during detection (for self-reference
-                         avoidance on category pages), or None
 
         Returns a tuple (content, primary_category) where content is the
-        translated markdown bytes (or None if the revision has no content),
+        translated Markdown bytes (or None if the revision has no content),
         and primary_category is the detected primary category name (or None).
         """
-        if not revision.wiki_content_path().is_file():
+        if not revision.content_path().is_file():
             return None, None
+
         target = self.url_prefix.copy()
-        target /= revision.page_path_unescaped()
+        target /= PagePath.moin_name_to_link(revision.page_path)
         target.args["action"] = "recall"
         target.args["rev"] = revision.page_revision
         content = self.fetch_cache.fetch(target.url)
-        main_content, primary_category = self.extract_content_section(content, skip=skip)
+
+        page = PagePath.from_moin_name(revision.page_name)
+        main_content, primary_category = self.extract_content_section(content, skip=page.category_name)
+
         translated = self.translate(main_content)
-        # when category-folders is enabled, replace CategoryXxx with Xxx
+
+        # when category-folders mode is enabled, replace CategoryXxx with Xxx
         # for all known categories so converted pages use clean names
         if self.ctx.category_folders:
-            tree = self.ctx.category_tree
+            tree = self.tree
             if tree is not None:
-                for node in tree.nodes.values():
-                    if node.is_category:
-                        translated = translated.replace(
-                            f"Category{node.name}".encode(),
-                            node.name.encode(),
-                        )
+                for node in tree.category.children.values():
+                    print(f"Replacing Category{node.name} with {node.name.encode()}")
+                    translated = translated.replace(f"Category{node.name}".encode(), node.name.encode())
         return translated, primary_category
 
     def extract_content_section(self, html: str, skip=None):
@@ -157,13 +162,13 @@ class Moin2Markdown:
         #
         # Single pass over all tags — handle each by type.
         # lxml correctly isolates unclosed <p> tags so each paragraph contains
-        # only its own children; depth-first order means parent is visited
+        # only its own children; depth-first order means a parent is visited
         # before its children.
         #
         # Category detection: track the current linemark <p> object so that
         # tag.parent is current_linemark_p correctly identifies direct children
         # of a linemark paragraph. Category links must be direct children of a
-        # linemark paragraph — nested links (e.g. inside <strong>) are ignored.
+        # linemark paragraph — nested links (e.g., inside <strong>) are ignored.
         last_category = None
         current_p_category = None
         current_linemark_p = None
@@ -179,10 +184,9 @@ class Moin2Markdown:
                     del tag["class"]
                 else:
                     current_linemark_p = None
-
-            elif tag.name == "span" and "anchor" in tag.get("class", []):
-                tag.decompose()
-
+            elif tag.name == "span":
+                if "anchor" in tag.get("class", []):
+                    tag.decompose()
             elif tag.name == "a":
                 if not tag.get("href"):
                     continue
@@ -193,28 +197,29 @@ class Moin2Markdown:
                 except ValueError:
                     self.ctx.logger.debug(f"Skipping invalid link {target}")
                     continue
+
                 if url.url.startswith(self.url_prefix.url):
                     new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
+                    new_url = unquote(new_url)
                     if len(str(url.query)) == 0:
                         # detect category membership — only direct children of a
                         # linemark paragraph count as membership declarations
                         if tag.parent is current_linemark_p and new_url.startswith("Category"):
-                            cat_name = new_url[len("Category"):]
-                            if not (skip and cat_name.split("/", 1)[0] == skip):
+                            if skip is None or new_url.split("/", 1)[0] != skip:
                                 if current_p_category is None:
-                                    current_p_category = cat_name
+                                    current_p_category = new_url
+
                         # conventional link — rewrite or strip
-                        new_target = self.revisions.get_new_link_target(new_url)
+                        new_target = self.tree.get_new_link_target(new_url)
                         if new_target:
                             tag["href"] = new_target
                             self.ctx.logger.debug(f"Normal map -> {new_target}")
-                    elif (
-                        "action" in url.query.params
-                        and "target" in url.query.params
-                        and url.query.params["action"] == "AttachFile"
+                    elif ("action" in url.query.params
+                          and "target" in url.query.params
+                          and url.query.params["action"] == "AttachFile"
                     ):
                         attach_target = url.query.params["target"]
-                        new_target = self.revisions.get_new_attachment_link_target(
+                        new_target = self.tree.get_new_attachment_link_target(
                             new_url, attach_target,
                         )
                         if new_target:
@@ -223,9 +228,9 @@ class Moin2Markdown:
                     else:
                         tag.unwrap()
                         continue  # tag detached — skip class strip
+
                 if tag.has_attr("class"):
                     del tag["class"]
-
             elif tag.name == "img":
                 if not tag.get("src"):
                     continue
@@ -237,17 +242,15 @@ class Moin2Markdown:
                 if target:
                     url = self.url_prefix.copy().join(target)
                     if url.url.startswith(self.url_prefix.url):
-                        new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
                         self.ctx.logger.debug(f"Image params {url.query.params}")
-                        if (
-                            "action" in url.query.params
-                            and "target" in url.query.params
-                            and url.query.params["action"] == "AttachFile"
+                        if ("action" in url.query.params
+                                and "target" in url.query.params
+                                and url.query.params["action"] == "AttachFile"
                         ):
+                            new_url = url.copy().remove(query=True).url[len(self.url_prefix.url):]
+                            new_url = unquote(new_url)
                             attach_target = url.query.params["target"]
-                            new_target = self.revisions.get_new_attachment_link_target(
-                                new_url, attach_target,
-                            )
+                            new_target = self.tree.get_new_attachment_link_target(new_url, attach_target)
                             if new_target:
                                 tag["src"] = new_target
                                 self.ctx.logger.debug(f"Image mapped to {new_target}")
@@ -255,13 +258,10 @@ class Moin2Markdown:
                         self.ctx.logger.debug(f"Not mapped - {url.query.params}")
                 if tag.has_attr("class"):
                     del tag["class"]
-
             elif tag.name == "form":
                 tag.unwrap()
-
             elif tag.name == "input":
                 tag.decompose()
-
             elif tag.name == "div":
                 tag.unwrap()
 
@@ -271,15 +271,15 @@ class Moin2Markdown:
 
         return "".join([str(x) for x in content.contents]), last_category
 
-    def translate(self, input: str) -> bytes:
-        """Translate HTML to Github Flavoured Markdown using pandoc"""
+    @staticmethod
+    def translate(content: str) -> bytes:
+        """Translate HTML to GitHub Flavored Markdown using pandoc"""
         process = subprocess.Popen(
             ["pandoc", "-f", "html", "-t", "gfm"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
         )
-        (output, _) = process.communicate(input.encode("utf-8"))
+        (output, _) = process.communicate(content.encode("utf-8"))
         return output
-
 
 # end
