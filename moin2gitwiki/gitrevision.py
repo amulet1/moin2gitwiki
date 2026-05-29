@@ -65,9 +65,11 @@ class GitExportStream:
                 blob_ref = NO_BLOB
             tree.add_attachment(file_ops, revision.page_name, revision.page_path, revision.attachment, blob_ref)
             description = f"Attach {revision.attachment} to {revision.page_name}"
+
         elif revision.edit_type == MoinEditType.ATT_DEL:
             tree.remove_attachment(file_ops, revision.page_name, revision.attachment)
             description = f"Detach {revision.attachment} from {revision.page_name}"
+
         elif revision.edit_type == MoinEditType.PAGE_DEL:
             tree.delete_page(file_ops, revision.page_name, revision.page_path)
             description = f"Delete {revision.page_name}"
@@ -100,9 +102,6 @@ class GitExportStream:
             blob_ref = self.output_blob(content)
             tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
             description = f"Update {revision.page_name}"
-
-        else:
-            return
 
         if not file_ops:
             return
@@ -197,11 +196,12 @@ class GitExportStream:
 
         for path, blob_mark in file_ops.items():
             if blob_mark == NO_BLOB:
-                op = f"D {path}\n"
+                op = f"D {path}"
             else:
-                op = f"M 100644 :{blob_mark} {path}\n"
+                op = f"M 100644 :{blob_mark} {path}"
 
-            self.write_string(op)
+            self.ctx.logger.debug(f"op: {op}")
+            self.write_string(op + "\n")
 
         self.write_string("\n")
         self.last_commit_mark = commit_ref
