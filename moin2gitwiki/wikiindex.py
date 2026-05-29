@@ -19,7 +19,6 @@ class MoinEditType(Enum):
     PAGE_ADD = auto()
     PAGE_UPD = auto()
     PAGE_REN = auto()
-    PAGE_DEL = auto()
     ATT_ADD = auto()
     ATT_DEL = auto()
 
@@ -123,11 +122,9 @@ class MoinEditEntries:
                     ed_type = MoinEditType.PAGE_REN
                 else:
                     previous_page_name = None
+                    # noinspection SpellCheckingInspection
                     if edit_type in ("SAVENEW", "SAVE", "SAVE/REVERT"):
-                        if ctx.moin_data.joinpath("pages", page, "revisions", page_revision).is_file():
-                            ed_type = MoinEditType.PAGE_ADD if edit_type == "SAVENEW" else MoinEditType.PAGE_UPD
-                        else:
-                            ed_type = MoinEditType.PAGE_DEL
+                        ed_type = MoinEditType.PAGE_ADD if edit_type == "SAVENEW" else MoinEditType.PAGE_UPD
                     elif edit_type == "ATTNEW":
                         ed_type = MoinEditType.ATT_ADD
                     elif edit_type == "ATTDEL":
