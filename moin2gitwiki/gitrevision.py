@@ -59,7 +59,8 @@ class GitExportStream:
         self.ctx.logger.debug(
             f"{revision.edit_date} {revision.edit_type.name} {revision.page_revision} {revision.page_path} : {revision.attachment}")
 
-        if revision.edit_type == MoinEditType.ATT_ADD:
+        edit_type = revision.edit_type
+        if edit_type == MoinEditType.ATT_ADD:
             attachment_path = revision.attachment_path()
             if os.path.isfile(attachment_path):
                 data = attachment_path.read_bytes()
@@ -68,43 +69,35 @@ class GitExportStream:
                 blob_ref = NO_BLOB
             tree.add_attachment(file_ops, revision.page_name, revision.page_path, revision.attachment, blob_ref)
             description = f"Attach {revision.attachment} to {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.ATT_DEL:
+        elif edit_type == MoinEditType.ATT_DEL:
             tree.remove_attachment(file_ops, revision.page_name, revision.attachment)
             description = f"Detach {revision.attachment} from {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.PAGE_DEL:
-            tree.delete_page(file_ops, revision.page_name, revision.page_path)
+        elif content is None:
+            self.ctx.logger.debug(f"page {revision.page_path} {revision.page_revision} has no content, removing it")
+            # delete the page, but keep attachments, if any
+            tree.delete_page(file_ops, False, revision.page_name, revision.page_path)
             description = f"Delete {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.PAGE_REN:
-            if content is None:
-                # TODO: warning? Or process as type=DELETE?
-                return
+        else:
             blob_ref = self.output_blob(content)
+            if edit_type == MoinEditType.PAGE_REN:
+                if revision.previous_page_name is None:
+                    self.ctx.logger.warning(f"no previous page name for {revision.page_name}")
+                    old_attachments = None
+                else:
+                    old_attachments = tree.delete_page(file_ops, True, revision.previous_page_name)
 
-            if revision.previous_page_name is None:
-                # TODO: Warning
-                old_attachments = None
+                tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref,
+                              old_attachments)
+                description = f"Rename {revision.previous_page_name} to {revision.page_name}"
+            elif edit_type == MoinEditType.PAGE_ADD:
+                tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref)
+                description = f"Add {revision.page_name}"
+            elif edit_type == MoinEditType.PAGE_UPD:
+                tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
+                description = f"Update {revision.page_name}"
             else:
-                old_attachments = tree.delete_page(file_ops, revision.previous_page_name)
-
-            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref, old_attachments)
-            description = f"Rename {revision.previous_page_name} to {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.PAGE_ADD:
-            if content is None:
+                # make static checker happy
                 return
-            blob_ref = self.output_blob(content)
-            tree.add_page(file_ops, True, revision.page_name, revision.page_path, category, blob_ref)
-            description = f"Add {revision.page_name}"
-
-        elif revision.edit_type == MoinEditType.PAGE_UPD:
-            if content is None:
-                return
-            blob_ref = self.output_blob(content)
-            tree.add_page(file_ops, False, revision.page_name, revision.page_path, category, blob_ref)
-            description = f"Update {revision.page_name}"
 
         if not file_ops:
             return
