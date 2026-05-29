@@ -57,7 +57,7 @@ class GitExportStream:
         file_ops: Dict[str, int] = {}
 
         self.ctx.logger.debug(
-            f"{revision.edit_date} {revision.edit_type.name} {revision.page_revision} {revision.page_path} : {revision.attachment}")
+            f"{revision.edit_date} {revision.edit_type.name} {revision.page_revision} {revision.page_path} : {revision.attachment} {category}")
 
         edit_type = revision.edit_type
         if edit_type == MoinEditType.ATT_ADD:
