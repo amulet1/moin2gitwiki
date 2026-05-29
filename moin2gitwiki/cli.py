@@ -13,9 +13,11 @@ from pathlib import Path
 import click
 
 from . import __version__
+from .appcontext import init_context
 from .context import Moin2GitContext
 from .gitrevision import GitExportStream
 from .moin2markdown import Moin2Markdown
+from .pagetree import PageTree
 from .wikiindex import MoinEditEntries
 
 
@@ -47,12 +49,11 @@ def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy, log_fi
     """
     MoinMoin To Git Wiki Tools Command Line Utility
 
-    Converts a MoinMoin wiki into a git repository populated with Markdown
-    formatted pages, set up for use on a git based wiki such as the built in
-    wiki for `gitea`, `github` or `gitlab`
+    Converts a MoinMoin wiki into a git repository populated with Markdown-formatted pages,
+    set up for use on a git-based wiki such as the built-in wiki for `gitea`, `github` or `gitlab`
 
     This parses the users and the revision structure from the MoinMoin data
-    filesystem.  However converting the wiki markup was found to be best done
+    filesystem. However, converting the wiki markup was found to be best done
     by converting the output HTML using `pandoc`.
 
     The utility requires `git` and `pandoc` commands to be available in the
@@ -85,7 +86,7 @@ def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy, log_fi
     # see https://github.com/nigelm/moin2gitwiki/issues/3
     sys.setrecursionlimit(4000)
 
-    ctx.obj = Moin2GitContext.create_context(
+    config = Moin2GitContext.create_context(
         syslog=syslog,
         debug=debug,
         verbose=verbose,
@@ -94,6 +95,9 @@ def moin2gitwiki(ctx, syslog, verbose, debug, moin_data, user_map, proxy, log_fi
         proxies=proxy,
         **({"log_file": log_file} if log_file is not None else {}),
     )
+    ctx.obj = config
+
+    init_context(config)
 
 
 # -----------------------------------------------------------------------
@@ -196,49 +200,73 @@ def save_users(ctx, filename):
     type=click.Path(exists=False, file_okay=False, dir_okay=True),
 )
 @click.pass_obj
-def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_dots, spaces_to_hyphens, subpages_as_dirs, attachment_dir, category_folders, destination):
+def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_dots, spaces_to_hyphens, subpages_as_dirs,
+                attachment_dir, category_folders, destination):
     """
-    Git fast-export all the revisions in the wiki into markdown git wiki form
+    Git fast-export all the revisions in the wiki into a Markdown git wiki form
 
     Named for the `git fast-export` command, although it actually builds a new
     git repository and then translates each revision at a time into a command
-    stream for `git-fast-import` on that new repository.  After all pages and
-    revisions have been processed the new git wiki repo instance is garbage
-    collected  (to compress all the revisions into a more compact set of git
+    stream for `git-fast-import` on that new repository. After all pages and
+    revisions have been processed, the new git wiki repo instance is garbage
+    collected (to compress all the revisions into a more compact set of git
     packs) and finally checked out.
 
     Page names are slightly modified - the "(2f)" seen in wiki file names
     (which is normally displayed as a `/` character) are changed to
-    underscores.  Internal links are remapped - however if a link goes within
+    underscores. Internal links are remapped - however, if a link goes within
     the wiki namespace to something that was not found in the wiki (this may
     include attachments which are not currently bought across), then the link
     is deleted (although the link text is left).
 
     Although the filesystem data is read to derive the revision and history
     information, the actual page transformation is done by retrieving the
-    page html from its webserver, cutting the content div out of that html,
-    doing a few simplifications and translations (specifcially images
-    corresponding to emojis are converted to emoji forms).  This HTML is then
-    pass through pandoc to get a markdown (specifically github flavoured
-    markdown).
+    page HTML from its webserver, cutting the content div out of that HTML,
+    doing a few simplifications and translations (specifically images
+    corresponding to emojis are converted to emoji forms). This HTML is then
+    passed through pandoc to get a Markdown (specifically GitHub-flavored
+    Markdown).
 
     """
     # cwd = Path.cwd()
     destination = Path(destination)
-    ctx.wiki_type = wiki_type
-    is_otterwiki = wiki_type.lower() == "otterwiki"
-    # each flag defaults based on wiki type if not explicitly set
-    ctx.strip_dots = strip_dots if strip_dots is not None else is_otterwiki
-    ctx.spaces_to_hyphens = spaces_to_hyphens if spaces_to_hyphens is not None else (not is_otterwiki)
-    ctx.subpages_as_dirs = subpages_as_dirs if subpages_as_dirs is not None else is_otterwiki
-    ctx.attachment_dir = attachment_dir if attachment_dir is not None else ("a" if is_otterwiki else "_attachments")
-    ctx.category_folders = category_folders
     if destination.exists():
         raise SystemExit(f"Destination path {destination} already exists.")
+
+    ctx.wiki_type = wiki_type
+
+    is_otterwiki = wiki_type.lower() == "otterwiki"
+    # each flag defaults based on wiki type if not explicitly set
+    if strip_dots is None:
+        strip_dots = is_otterwiki
+
+    if spaces_to_hyphens is None:
+        spaces_to_hyphens = not is_otterwiki
+
+    if attachment_dir is None:
+        # TODO: Check if it starts with "/"
+        attachment_dir = "" if is_otterwiki else "_attachments"
+
+    if subpages_as_dirs is None:
+        if attachment_dir.startswith("/"):
+            attachment_dir = attachment_dir[1:]
+            subpages_as_dirs = False
+        else:
+            subpages_as_dirs = is_otterwiki
+
+    ctx.strip_dots = strip_dots
+    ctx.spaces_to_hyphens = spaces_to_hyphens
+    ctx.subpages_as_dirs = subpages_as_dirs
+    ctx.attachment_dir = attachment_dir
+    ctx.category_folders = category_folders
+
+    tree = PageTree()
+
     #
     # build your initial revision set from the wiki data
-    revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
+    revisions = MoinEditEntries.create_edit_entries(tree, ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
+
     #
     # build the translator
     translator = Moin2Markdown.create_translator(
@@ -246,6 +274,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
+        tree=tree
     )
     #
     # build the output git instance
@@ -253,22 +282,23 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     os.chdir(destination)
     subprocess.run(["git", "init"])
     with subprocess.Popen(["git", "fast-import"], stdin=subprocess.PIPE) as gitstream:
-        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page)
-        with click.progressbar(revisions.entries) as entries:
+        export = GitExportStream(output=gitstream.stdin, ctx=ctx, home_page=home_page, tree=tree)
+        ### FIXME:      with click.progressbar(revisions.entries) as entries:
+        entries = revisions.entries
+        if True:
             for revision in entries:
-                np = revision.name_placement()
-                skip = np.category_name
-                content, primary_category = translator.retrieve_and_translate(
-                    revision=revision, skip=skip,
-                )
+                content, primary_category = translator.retrieve_and_translate(revision=revision)
                 export.add_wiki_revision(
                     revision=revision,
                     content=content,
-                    primary_category=primary_category,
+                    category=primary_category,
                 )
+
         if home_page == "end":
             export.emit_home_page()
+
         export.end_stream()
+
     if export.home_overwritten:
         click.echo(
             click.style(
@@ -278,6 +308,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
             ),
             err=True,
         )
+
     subprocess.run(["git", "gc", "--aggressive"])  # pack it
     subprocess.run(["git", "checkout", "master"])  # check out the data
 
@@ -300,7 +331,7 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
 @click.pass_obj
 def translate_page(ctx, cache_directory, url_prefix, page, version):
     """
-    Fetch a single page revision and translate to Markdown
+    Fetch a single-page revision and translate to Markdown
 
     The first argument is a page name, the second an integer revision.
 
@@ -308,7 +339,9 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
     """
     #
     # build your initial revision set from the wiki data
-    revisions = MoinEditEntries.create_edit_entries(ctx=ctx)
+    tree = PageTree()
+
+    revisions = MoinEditEntries.create_edit_entries(tree, ctx=ctx)
     click.echo(click.style(f"Read {revisions.count()} wiki revisions", fg="green"))
     #
     # build the translator
@@ -317,22 +350,19 @@ def translate_page(ctx, cache_directory, url_prefix, page, version):
         cache_directory=Path(cache_directory),
         url_prefix=url_prefix,
         revisions=revisions,
+        tree=tree
     )
     #
     # find the page and translate it
     for revision in revisions.entries:
         if revision.page_name == page and int(revision.page_revision) == version:
-            np = revision.name_placement()
-            content, _ = translator.retrieve_and_translate(
-                revision=revision, skip=np.category_name,
-            )
+            content, _ = translator.retrieve_and_translate(revision=revision)
             print(content.decode("utf-8"))
             break
     else:
         ctx.logger.debug(f"Page '{page}' revision {version} not found")
         click.echo(f"Error: page '{page}' revision {version} not found", err=True)
         raise SystemExit(1)
-
 
 # -----------------------------------------------------------------------
 # end

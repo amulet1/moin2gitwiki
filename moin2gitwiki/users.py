@@ -12,7 +12,7 @@ class Moin2GitUser:
 
     Attributes:
         moin_id: MoinMoin user id - multi-component numeric string
-        moin_name: The Moin username  - used as a git name
+        moin_name: The MoinMoin username - used as a git name
         email: Email address of the user account
 
     """
@@ -45,7 +45,7 @@ class Moin2GitUserSet:
 
     Attributes:
         id_map: maps moin user ids to Moin2GitUser objects
-        name_map: maps moin user names to Moin2GitUser objects
+        name_map: maps moin usernames to Moin2GitUser objects
     """
 
     id_map: dict = attr.ib(default={})
@@ -99,7 +99,7 @@ class Moin2GitUserSet:
     @classmethod
     def load_users_from_file(cls, path, logger):
         """
-        Builds a Moin2GitUserSet from a saved json file
+        Builds a Moin2GitUserSet from a saved JSON file
         """
         logger.debug(f"Loading wiki users from {path}")
         with open(path) as f:
@@ -113,7 +113,7 @@ class Moin2GitUserSet:
 
     def save_users_to_file(self, path):
         """
-        Writes a Moin2GitUserSet to a saved json file
+        Writes a Moin2GitUserSet to a saved JSON file
         """
         user_data = []
         for user in self.name_map.values():
@@ -135,12 +135,11 @@ class Moin2GitUserSet:
 
     def get_user_by_id_or_anonymous(self, ident):
         """
-        Gets a Moin2GitUser by matching a moin id.  If non-existant returns the anonymous id
+        Gets a Moin2GitUser by its Moin ID. Returns the anonymous user if the ID is missing or None.
         """
         if ident is None or ident not in self.id_map:
             return self.get_user_by_name("anonymous")
         else:
             return self.get_user_by_id(ident)
-
 
 # end

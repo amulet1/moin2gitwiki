@@ -1,11 +1,14 @@
-import os
+from __future__ import annotations
+
 import re
-from typing import Any
+from typing import List, Optional
 
 import attr
 
 from .appcontext import get_context
 
+
+@attr.s(auto_attribs=True, slots=True, frozen=True)
 class PagePath:
     """Classification of a MoinMoin page for category tree placement.
 
@@ -14,20 +17,18 @@ class PagePath:
         parts:
 
     """
-    is_category: bool = attr.ib()
-    parts: list[str] = attr.ib()
+    is_category: bool
+    parts: List[str]
 
-#    @property
-#    def ctx(self):
-#        return get_context()
+    @property
+    def category_name(self) -> Optional[str]:
+        if self.is_category:
+            return "Category" + self.parts[0]
 
-#    @property
-#    def strip_dots(self)
-#        return self.ctx.strip_dots
+        return None
 
-
-    @staticmethod
-    def moin_to_pagepath(subpages_as_dirs:bool, thing: str) -> tuple[bool, list[Any]]:
+    @classmethod
+    def from_moin_name(cls, thing: str, force_category: bool = False) -> PagePath:
         """Decode MoinMoin name and convert to a page path.
 
         Processing steps:
@@ -37,9 +38,9 @@ class PagePath:
 
         Controlled by context flags:
         - ctx.spaces_to_hyphens: replace spaces with hyphens (default: True for gollum/gitea)
-        - ctx.strip_dots: remove dots                        (default: True for otterwiki)
-        - ctx.subpages_as_dirs: keep / path delimiter        (default: True for otterwiki)
-        - ctx.category_folders: use page Category as folder  (default: False)
+        - ctx.strip_dots: remove dots (default: True for otterwiki)
+        - ctx.subpages_as_dirs: keep / path delimiter (default: True for otterwiki)
+        - ctx.category_folders: use page Category as a folder (default: False)
         """
 
         # Replace characters unsafe in filenames, preserving path separators.
@@ -61,7 +62,7 @@ class PagePath:
         if ctx.strip_dots:
             unsafe_chars["."] = ""
 
-        parts = PagePath.decode_moin_name(thing).split("/")
+        parts = cls.decode_moin_name(thing).split("/")
 
         sanitized = []
         for part in parts:
@@ -74,19 +75,22 @@ class PagePath:
         if not ctx.subpages_as_dirs:
             sanitized = ["_".join(sanitized)]
 
-        is_category = False
+        is_category = force_category
 
         if ctx.category_folders and sanitized:
-            category = PagePath.strip_prefix(sanitized[0], "Category")
-            if category:
-                sanitized[0] = category
+            category = cls.strip_prefix(sanitized[0], "Category")
+            if category is not None:
                 is_category = True
+                # only replace the first part if category name is not empty
+                if category:
+                    sanitized[0] = category
 
-        return is_category, sanitized
+        return cls(is_category, sanitized)
 
     @staticmethod
     def decode_moin_name(thing: str) -> str:
         """Decode MoinMoin hex encoded sequences e.g. (20) -> space, (2e20) -> '. ' """
+
         def decode_hex(m):
             hex_str = m.group(1)
             try:
@@ -97,8 +101,12 @@ class PagePath:
         return re.sub(r'\(([0-9a-fA-F]+)\)', decode_hex, thing)
 
     @staticmethod
-    def strip_prefix(text: str, prefix: str) -> str:
+    def strip_prefix(text: str, prefix: str) -> Optional[str]:
         if text.startswith(prefix):
             return text.removeprefix(prefix).strip()
 
-        return ""
+        return None
+
+    @classmethod
+    def moin_name_to_link(cls, thing: str) -> str:
+        return cls.decode_moin_name(thing)
