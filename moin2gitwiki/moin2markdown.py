@@ -127,14 +127,16 @@ class Moin2Markdown:
 
         translated = self.translate(main_content)
 
+        # TODO: Reevaluate the need for this
         # when category-folders mode is enabled, replace CategoryXxx with Xxx
         # for all known categories so converted pages use clean names
         if self.ctx.category_folders:
             tree = self.tree
             if tree is not None:
                 for node in tree.category.children.values():
-                    print(f"Replacing Category{node.name} with {node.name.encode()}")
+                    self.ctx.logger.debug(f"Replacing Category{node.name} with {node.name.encode()}")
                     translated = translated.replace(f"Category{node.name}".encode(), node.name.encode())
+
         return translated, primary_category
 
     def extract_content_section(self, html: str, skip=None):

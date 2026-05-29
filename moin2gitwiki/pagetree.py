@@ -97,6 +97,12 @@ class Node:
     # ------------------------------------------------------------------
 
     def get_attachment_path(self, attachment: str, path: str = "") -> str:
+        """The new pathname of the attachment file.
+
+        Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
+        - subpages_as_dirs=True  PageName/<attachment_dir>/filename
+        - subpages_as_dirs=False <attachment_dir>/PageName/filename
+        """
         if path == "":
             path = self.get_path()
 
@@ -161,8 +167,6 @@ class Node:
         path_changed = category is not self._category
         deleted = blob_mark == NO_BLOB
 
-        print(f"update: {self.name} changed={path_changed} deleted={deleted}")
-
         self._collect_paths(False, path_changed, path_changed or deleted, file_ops)
 
         self.blob_mark = blob_mark
@@ -189,18 +193,17 @@ class Node:
             # Check for name collisions (node can be in children due to category or parent or both)
             if node and self._parent is not node:
                 # remove node from old category
-                self.logger.warning(f"removing node {self.name} from category {node.get_path(False)}")
+                self.logger.debug(f"removing node '{self.name}' from category '{node.get_path(False)}'")
                 del node.children[self.name]
                 node.delete_empty_leaves()
 
             # Check for name collisions (category can be same as parent)
             if category is not self._parent and category is not None:
                 if category.children.get(self.name) is None:
-                    print(f"Adding node {self.name} to category {category.name}")
                     category.children[self.name] = self
                 else:
                     # collision
-                    print(f"Warning: Collision in category tree: {self.name} already exists")
+                    self.logger.warning(f"name collision in category tree: '{self.get_path(False)}' already exists")
                     if self._category is None:
                         return False  # no change
 
@@ -217,7 +220,7 @@ class Node:
         node = self
         while node.is_empty and node._parent and not node.children and not node.attachments:
             # no children, we can delete the node
-            print(f"Deleting node {node.name} with no children")
+            self.logger.debug(f"deleting node {node.name} with no children")
             parent = node._parent
             node._parent = None
             del parent.children[node.name]
@@ -349,7 +352,7 @@ class PageTree:
                     break
 
                 # create new node
-                print(f"Creating node {name} for {parent.get_path(False) if parent else '[root]'}")
+                self.logger.debug(f"creating node {name} for {parent.get_path(False) if parent else '[root]'}")
                 node = Node(name=name, parent=parent)
                 parent.children[name] = node
 
@@ -365,33 +368,26 @@ class PageTree:
             blob_mark: int,
             old_attachments: Optional[dict[str, int]] = None
     ):
-        """Add or update a node and return (path, blob_mark) for M commands.
+        """Add or update a node and update paths for fast-export.
 
-        Finds an existing node or creates a new one.
-        Attaches to parent, computes paths for the whole subtree.
+        Finds an existing node or creates a new one. Attaches to parent.
         """
-        print(
-            f"add_page: new={new} name={moin_page_name} category={moin_category_name} mark={blob_mark} page={moin_page_path}")
-
         page = self.moin_name_to_node(True, moin_page_name)
         assert page is not None
 
         if moin_category_name is None:
             category = None
         else:
-            print(f"add_page: category={moin_category_name}")
             category = self.moin_name_to_node(True, moin_category_name, force_category=True)
 
         if page.is_empty:
             # page does not exist
             if not new:
-                self.logger.warning("add_page: page expected to exist (name=%r)", moin_page_name)
-                print(self)
+                self.logger.warning("page was expected to exist (name=%r)", moin_page_name)
         else:
             # existing page
             if new:
-                self.logger.warning("add_page: page already exists (name=%r)", moin_page_name)
-                print(self)
+                self.logger.warning("page already exists (name=%r)", moin_page_name)
 
         page.update(file_ops, category, blob_mark)
 
@@ -402,12 +398,11 @@ class PageTree:
                 for attachment, b_mark in old_attachments.items():
                     page.add_attachment(file_ops, attachment, b_mark, path)
             else:
-                print(f"ERROR: add_page: attachments already exist on page {page.get_path(False)}")
+                self.logger.error(f"attachments already exist on page {page.get_path(False)}")
 
         # TODO: Make it part of moin_name_to_node
         # add mapping for links
         path = PagePath.moin_name_to_link(moin_page_path)
-        print(f"add_page: map[{path}] to {page.get_path(False)}")
         self.page_map[path] = page
 
     def delete_page(
@@ -416,12 +411,10 @@ class PageTree:
             moin_page_name: str,
             moin_page_path: Optional[str] = None
     ) -> Optional[dict[str, int]]:
-        """Delete a node and return the deleted node."""
-        print(f"delete_page: name={moin_page_name} page={moin_page_path}")
-
+        """Delete a node and update paths for fast-export, return delete node's attachments, if any."""
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None or page.is_empty:
-            self.logger.warning("delete_page: page does not exist (name=%r)", moin_page_name)
+            self.logger.warning("page does not exist (name=%r)", moin_page_name)
             attachments = None
         else:
             # mark node as deleted
@@ -430,7 +423,6 @@ class PageTree:
         if moin_page_path is not None:
             path = PagePath.moin_name_to_link(moin_page_path)
             # TODO: Warn if it does not exist
-            print(f"delete_page: remove map[{path}]")
             self.page_map.pop(path, None)
 
         return attachments
@@ -447,40 +439,17 @@ class PageTree:
         # TODO: Make it part of moin_name_to_node
         # add mapping for links
         path = PagePath.moin_name_to_link(moin_page_path)
-        print(f"add_attachment: map[{path}] to {page.get_path(False)}")
         self.page_map[path] = page
 
     def remove_attachment(self, file_ops: dict[str, int], moin_page_name: str, attachment: str):
         """
-        Removes an attachment from a specified MoinMoin page.
+        Removes an attachment from a specified MoinMoin page, updates paths for fast-export.
         """
         page = self.moin_name_to_node(False, moin_page_name)
         if page is None:
             self.logger.warning(f"remove_attachment: page does not exist (name={moin_page_name})")
         else:
             page.remove_attachment(file_ops, attachment)
-
-    # FIXME
-    def attachment_destination(self, moin_page_name: str, attachment: str) -> Optional[str]:
-        """The new pathname of the attachment file.
-
-        Layout is determined by ctx.subpages_as_dirs and ctx.attachment_dir:
-        - subpages_as_dirs=True  PageName/<attachment_dir>/filename
-        - subpages_as_dirs=False <attachment_dir>/PageName/filename
-        - mode: -1=delete, 0=check, 1=add
-        attachment_dir defaults to 'a' for otterwiki, '_attachments' for gollum/gitea.
-        """
-        if attachment == "":
-            raise ValueError("No attachment path set")
-
-        page = self.moin_name_to_node(False, moin_page_name)
-        if page is None:
-            self.logger.warning("attachment_destination: no page node for page %r", moin_page_name)
-            # FIXME
-            print(self)
-            return None
-
-        return page.get_attachment_path(attachment)
 
     def get_new_link_target(self, link) -> Optional[str]:
         page = self.lookup_page(link)
@@ -490,7 +459,7 @@ class PageTree:
             self.logger.debug(f"{link} -> {destination}")
             return quote(destination, safe="/")
 
-        self.logger.warning(f"WARNING: get_new_link_target: no map for {link}")
+        self.logger.debug(f"no map for link {link}")
         return None
 
     def get_new_attachment_link_target(self, link: str, attachment: str) -> Optional[str]:
