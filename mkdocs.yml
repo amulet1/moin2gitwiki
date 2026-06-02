@@ -9,12 +9,14 @@ nav:
   - Commands: commands.md
   - Changelog: changelog.md
   - Internal:
-    - Category Tree:      internal/categorytree.md
+    - App Context:        internal/appcontext.md
     - CLI:                internal/cli.md
     - Context:            internal/context.md
     - Fetch Cache:        internal/fetch_cache.md
     - Git Revision:       internal/gitrevision.md
     - Moin To Markdown:   internal/moin2markdown.md
+    - Page Path:          internal/pagepath.md
+    - Page Tree:          internal/pagetree.md
     - Users:              internal/users.md
     - Wiki Index:         internal/wikiindex.md
 

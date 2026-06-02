@@ -4,9 +4,9 @@ pagetree.py - Incremental page tree for moin2gitwiki
 Maintains the mapping from MoinMoin pages/categories to git paths,
 updated incrementally as revisions are processed in chronological order.
 
-Two traversal modes used by remove_node/delete_node and add_node:
-  - _collect_delete_paths: leaves first, computes old paths from the old prefix
-  - _collect_add_paths:    parent first, computes new paths from a new prefix
+Node._collect_paths() handles both addition and deletion in one traversal:
+  - add=True:  parent first, computes new paths, records blob marks
+  - add=False: records NO_BLOB for deletion
 
 Callers are responsible for:
   - sanitizing names before passing them in
@@ -231,7 +231,12 @@ class Node:
     # ------------------------------------------------------------------
 
     def _collect_paths(self, add: bool, recurse: bool, process_attachments: bool, paths: dict[str, int]):
-        """Collect path and blob_mark for subtree addition."""
+        """Collect paths for this subtree into file_ops.
+
+        add=True  records blob_mark at each path (addition/update).
+        add=False records NO_BLOB at each path (deletion).
+        recurse controls whether children are also processed.
+        """
         stack: list[tuple[Node, str]] = [(self, self.get_path())]
 
         while stack:
@@ -250,9 +255,7 @@ class Node:
                     stack.append((child, path + "/" + name))
 
     def collect_all_paths(self, paths: List[str], node_path: str):
-        """Collect path for subtree addition, leaves last.
-
-        """
+        """Collect all non-empty paths in this subtree, depth-first."""
         if not self.is_empty:
             paths.append(node_path)
 
@@ -269,29 +272,29 @@ class Node:
 
 
 # ---------------------------------------------------------------------------
-# CategoryTree
+# PageTree
 # ---------------------------------------------------------------------------
 @attr.s(auto_attribs=True, slots=True)
 class PageTree:
-    """Incremental category tree mapping MoinMoin pages to output paths.
+    """Incremental page tree mapping MoinMoin pages to output paths.
 
     Caller processes revisions in chronological order and calls:
 
-        add_node(is_category, key, name, category, blob_mark)
+        add_page(file_ops, new, moin_page_name, moin_page_path,
+                 moin_category_name, blob_mark, old_attachments)
             -- when a page or category revision is processed.
-            Returns a list of (path, blob_mark) for M commands.
+            Updates file_ops dict with path->blob_mark entries.
 
-        remove_node(is_category, key)
-            -- before add_node when a node is moving to a new location.
-            Soft remove: keeps the node in dict with children intact for re-add.
-            Returns a list of (path, blob_mark) for D commands.
+        delete_page(file_ops, delete_attachments, moin_page_name,
+                    moin_page_path)
+            -- when a page is deleted or renamed away.
+            Updates file_ops dict with NO_BLOB entries for deleted paths.
 
-        delete_node(is_category, key)
-            -- when a node is actually deleted or renamed away.
-            Hard remove: detaches children, removes from dict.
-            Returns a list of (path, blob_mark) for D commands.
+        add_attachment / remove_attachment
+            -- when an attachment is added or removed.
 
-    All returned paths have no file extension — callers add one if needed.
+    file_ops maps path -> blob_mark where NO_BLOB=0 signals deletion.
+    All paths have no file extension — callers add one if needed.
     """
     regular: Node = Node(name="")
     category: Node = Node(name="")

@@ -10,18 +10,19 @@ from .appcontext import get_context
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
 class PagePath:
-    """Classification of a MoinMoin page for category tree placement.
+    """MoinMoin page name parsed into (is_category, parts) components.
 
     Attributes:
-        is_category:
-        parts:
-
+        is_category: True if the page name starts with 'Category' followed
+                     by a non-empty name.
+        parts:       Sanitized, non-empty path components.
     """
     is_category: bool
     parts: List[str]
 
     @property
     def category_name(self) -> Optional[str]:
+        """Return the full MoinMoin category page name e.g. 'CategoryFoo', or None."""
         if self.is_category:
             return "Category" + self.parts[0]
 
@@ -34,7 +35,7 @@ class PagePath:
         Processing steps:
         1. Decode hex sequences e.g. (20)->space, (2f)->/
         2. Sanitize each path component (spaces, dots etc. based on wiki type)
-        3. Join with / (subpages_as_dirs) or _ (gollum/gitea)
+        3. Return sanitized parts as a list (no joining — callers decide)
 
         Controlled by context flags:
         - ctx.spaces_to_hyphens: replace spaces with hyphens (default: True for gollum/gitea)
