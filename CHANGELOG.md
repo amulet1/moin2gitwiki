@@ -33,38 +33,39 @@ Unreleased Changes
 - feat: add `--log-file` option to control log file path (default:
   `moin2gitwiki.log` in current directory, also via `MOIN2GIT_LOG_FILE`)
 - feat: add `--category-folders` option — uses MoinMoin category tags to
-  organize converted pages into subfolders using an incremental category
-  tree that tracks hierarchy changes across the full revision history.
-  Category pages, category subpages, and regular tagged pages are each
-  classified and placed correctly. Cascade renames are emitted when a
-  category hierarchy changes. Off by default for backward compatibility.
+  organise converted pages into subfolders using an incremental page tree
+  that tracks hierarchy changes across the full revision history.
+  Category pages and regular tagged pages are classified and placed
+  correctly. Cascade renames are emitted when a category hierarchy changes.
+  Off by default for backward compatibility.
 - feat: strip `Category` prefix from known category names in converted
   content when `--category-folders` is enabled
-- feat: add `CategoryTree` with `CategoryNode` and `PageNode` — incremental
-  category-to-path resolution updated per revision as wiki history is
-  replayed, replacing the former static two-pass `build_category_map()`
-  approach
-- feat: add `CategoryPlacement` and `category_placement()` / `prev_category_placement()`
-  to `MoinEditEntry` — classifies each page as `'category'`, `'subpage'`,
-  or `'page'` for routing into the category tree
+- feat: add `PagePath` class (`pagepath.py`) — decodes MoinMoin name,
+  sanitizes path components, detects category prefix — returns
+  `(is_category, parts)` used for page name classification and tree
+  traversal throughout the pipeline
+- feat: add `PageTree` and `Node` (`pagetree.py`) — incremental tree
+  tracking page and category placement, updated per revision as wiki
+  history is replayed; `Node._category` reference enables category-based
+  placement; replaces former static two-pass `build_category_map()` approach
+- feat: add `AppContext` singleton (`appcontext.py`) — provides global
+  context access via `init_context()`/`get_context()` without threading
+  the context object through every constructor
+- feat: revised `MoinEditType` — `PAGE_ADD`/`PAGE_UPD`/`PAGE_REN`/
+  `ATT_ADD`/`ATT_DEL` replacing former `PAGE`/`ATTACH`/`RENAME`/`DELETE`;
+  MoinMoin `SAVENEW` action maps to `PAGE_ADD`; `ATT_DEL` now tracked as
+  a distinct type
+- fix: `file_ops` changed from `List[str]` of git fast-import command
+  strings to `Dict[str, int]` mapping path→blob_mark; `NO_BLOB=0` sentinel
+  marks deletions; commit emission unified in `_emit_commit()`
 - fix: RENAME now handled as delete-old + add-new, correctly covering all
-  combinations: page↔page, page↔category, category↔category,
-  page↔subpage
-- fix: category page renames clean up the old category node from the tree
-  before creating the new one, cascading child pages to bare-name paths
-- fix: falsy empty-string resolved paths no longer silently skip `D`
-  commands — all `old_resolved` checks use `is not None`
-- fix: bare `"Category"` page name (empty stripped name) treated as a
-  regular page, preventing a spurious `.md` file in the output
-- fix: leading/trailing spaces stripped from all path components in
-  `sanitize_for_path()`, and from category names and suffixes parsed
-  from page content
-- fix: revision handling unified — CategoryTree always initialized
-  regardless of `--category-folders`; plain and category-folders modes
-  share a single `add_wiki_revision()` code path
-- fix: `markdown_page_name()` and `markdown_page_path()` now return
-  category-resolved paths when `--category-folders` is enabled, fixing
-  `Home.md` links and attachment paths
+  page/category combinations; attachments moved from old page to new on rename
+- fix: `#message` div now removed from content rather than unwrapped,
+  preventing MoinMoin system messages from appearing in converted pages
+- fix: `retrieve_and_translate()` no longer takes a `skip` parameter —
+  category self-reference detection uses `PagePath.from_moin_name()` directly
+- fix: replace `getattr(ctx, ...)` with direct attribute access — all
+  context attributes have declared defaults in `Moin2GitContext`
 - fix: `translate_page` command exits with error and message on stderr
   when the requested page/revision is not found
 - feat: replace `--home-page/--no-home-page` with `--home-page
@@ -80,12 +81,6 @@ Unreleased Changes
   and prose; self-references skipped for category pages
 - fix: local MoinMoin markup no longer read — category detection and
   content translation both operate entirely from rendered HTML
-- fix: split `category_placement()` into `name_placement()` (pure name
-  classification) and `category_placement(np, primary_category)` to
-  thread the self-reference skip name through the call chain before
-  HTML is fetched
-- fix: replace `getattr(ctx, ...)` with direct attribute access — all
-  context attributes have declared defaults in `Moin2GitContext`
 - docs: add MoinMoin Preparation section documenting surge protection
   requirement (`surge_action_limits = None`) before running conversion
 - docs: update Installation section to reference fork instead of PyPI

@@ -37,10 +37,10 @@ class MoinEditEntry:
         page_name: The name of the page from the index file
         previous_page_name: The name the page previously had if renamed
         page_path: The name on the filesystem of the page
-        attachment: attachment field - not used
-        comment: comment filed - only used for git comments
+        attachment: attachment filename for ATT_ADD/ATT_DEL edits, empty otherwise
+        comment: comment field — used as git commit message when non-empty
         user: the mapped moin user
-        ctx: Context - there for moin_path and logging
+        ctx: Context — used for moin_data path, logging, and config flags
 
     """
 

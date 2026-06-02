@@ -79,7 +79,7 @@ overridden individually:
 | `--strip-dots` / `--no-strip-dots` | False | **True** | Remove dots from page names |
 | `--spaces-to-hyphens` / `--no-spaces-to-hyphens` | **True** | False | Replace spaces with hyphens |
 | `--subpages-as-dirs` / `--no-subpages-as-dirs` | False | **True** | MoinMoin `(2f)` subpages as real subdirectories |
-| `--attachment-dir` | `_attachments` | `a` | Attachment folder name |
+| `--attachment-dir` | `_attachments` | `""` (no subdir) | Attachment folder name |
 
 Attachment layout is determined by `--subpages-as-dirs`:
 
@@ -93,7 +93,7 @@ based on their MoinMoin category membership. Off by default.
 
 When enabled, category pages become folder index pages and tagged pages are
 placed under their category's resolved path. Subcategory hierarchies are
-derived from the category pages' own content. The category tree is maintained
+derived from the category pages' own content. The page tree is maintained
 incrementally across the full revision history, so moves and renames are
 reflected correctly in the git history.
 

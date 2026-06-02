@@ -212,12 +212,11 @@ def fast_export(ctx, cache_directory, url_prefix, home_page, wiki_type, strip_do
     collected (to compress all the revisions into a more compact set of git
     packs) and finally checked out.
 
-    Page names are slightly modified - the "(2f)" seen in wiki file names
-    (which is normally displayed as a `/` character) are changed to
-    underscores. Internal links are remapped - however, if a link goes within
-    the wiki namespace to something that was not found in the wiki (this may
-    include attachments which are not currently bought across), then the link
-    is deleted (although the link text is left).
+    Page names are slightly modified — the "(2f)" seen in wiki file names
+    (MoinMoin's encoding for "/") is either kept as a real directory separator
+    (with `--subpages-as-dirs`) or replaced with underscores. Internal links
+    are remapped — if a link target was not found in the wiki, the link is
+    deleted but the link text is left.
 
     Although the filesystem data is read to derive the revision and history
     information, the actual page transformation is done by retrieving the
